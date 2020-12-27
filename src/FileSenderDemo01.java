@@ -21,7 +21,9 @@ public class FileSenderDemo01 {
             }
             System.out.println("file write done");
         }
-        socket.close();
+        if(socket != null){
+            socket.close();
+        }
         System.out.println("the file sender disconnected");
     }
 }
