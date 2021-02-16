@@ -1,12 +1,15 @@
 package demo_with_database.pojo;
 
+import java.io.Serializable;
+
 /**
  * @author divenier
  * @date 2021/2/16 14:36
  * 资源类 （每个资源都是唯一的，同样的资源可能有多个设备持有，算多个资源）
  * 只是做记录，不存储资源
+ * 应该是可序列化的
  */
-public class Resource {
+public class Resource implements Serializable {
     /**
      * resourceName --资源文件名
      * deviceName   --存储该资源的设备名
@@ -58,6 +61,17 @@ public class Resource {
 
     public void setCode(String code) {
         this.code = code;
+    }
+
+    @Override
+    public String toString() {
+        return "Resource{" +
+                "resourceName='" + resourceName + '\'' +
+                ", deviceName='" + deviceName + '\'' +
+                ", status=" + status +
+                ", code='" + code + '\'' +
+                ", note='" + note + '\'' +
+                '}';
     }
 
     public String getNote() {
