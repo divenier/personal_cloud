@@ -54,7 +54,6 @@ public class JdbcUtils {
         return connection;
     }
 
-
     /**
      * 查询公共类
      * @param connection
