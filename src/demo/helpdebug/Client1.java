@@ -2,10 +2,7 @@ package demo.helpdebug;
 
 import demo_with_database.pojo.Resource;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectOutputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
@@ -17,22 +14,32 @@ import java.util.Scanner;
  * 客户端
  */
 public class Client1 {
+    /**
+     * bufferedWriter第一次使用总是有乱码
+     */
     private static Socket client;
     private static InputStream is;
     private static OutputStream os;
+    private static PrintStream ps;
+    private static BufferedWriter bw;
+    private static BufferedReader br;
     private static ObjectOutputStream oos;
     private static Scanner scanner;
 
     public Client1(Socket clientSocket) throws IOException {
-        this.client = clientSocket;
-        this.is = clientSocket.getInputStream();
-        this.os = clientSocket.getOutputStream();
-        this.oos = new ObjectOutputStream(this.os);
+        client = clientSocket;
+        is = clientSocket.getInputStream();
+        os = clientSocket.getOutputStream();
+        br = new BufferedReader(new InputStreamReader(is,"UTF-8"));
+        bw = new BufferedWriter(new PrintWriter(os));
+        ps = new PrintStream(new BufferedOutputStream(os));
+        oos = new ObjectOutputStream(clientSocket.getOutputStream());
     }
 
     public static void main(String[] args) throws IOException {
-        System.out.println("客户端开始运行");
+        System.out.println("------客户端开始运行--------");
         Socket socket = new Socket(InetAddress.getByName("localhost"), 6666);
+        //给类变量赋值
         new Client1(socket);
 
         // 用于存储用户的输入命令
@@ -48,6 +55,7 @@ public class Client1 {
             System.out.println("exit: 申请下线");
 
             label = scanner.next();
+//            label = scanner.nextLine();
             switch (label) {
                 case "hello":
                     boolean helloSuccess = hello();
@@ -74,11 +82,61 @@ public class Client1 {
                 default:
                     break;
             }
+
+
 //            System.out.println("客户端停止运行");
 //            reportResource(resource);
         }
+        scanner.close();
+        socket.close();
     }
 
+    /**
+     * 客户端的发送信息的方法，几乎与server的send函数一样
+     * @param sendMsg
+     * @return 发送是否成功
+     */
+    public static boolean sendMsg(String sendMsg){
+        boolean sendSuccess = false;
+        if(sendMsg == null || "".equals(sendMsg)){
+            System.out.println("发送的消息为空");
+            return true;
+        }else {
+            try {
+/*                dos.writeUTF(sendMsg);
+                dos.flush();*/
+                bw.write(sendMsg);
+                //换行，否则server的 readline就会一直阻塞
+                bw.newLine();
+                bw.flush();
+/*                ps.println(sendMsg);
+                ps.flush();*/
+                System.out.println("运行了一次send()函数，发送的消息是：" + sendMsg);
+                sendSuccess = true;
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return sendSuccess;
+    }
+
+
+    /**
+     * 把读取/接收回复的实现放到一个函数中
+     * @return 接收到的String
+     */
+    public static String recvMsg() throws IOException {
+        String receivedMsg = br.readLine();
+        if(receivedMsg == null || "".equals(receivedMsg)){
+            System.out.println("recvMsg收到了个寂寞");
+            return null;
+        }
+        //\\s+表示匹配任意>1个空格
+        System.out.println(receivedMsg);
+        String[] msgArr = receivedMsg.split("\\s+");
+//        return new String(msgArr[0].getBytes(StandardCharsets.UTF_8),"UTF-8");
+        return msgArr[0];
+    }
     /**
      * 和服务端打招呼
      */
@@ -88,16 +146,15 @@ public class Client1 {
 
         //打招呼，第一次
         try {
-            os.write("hello".getBytes(StandardCharsets.UTF_8));
-
-            //对服务端返回的打招呼信息处理
-            byte[] responseData = new byte[1024];
-            int responseLen = is.read(responseData);
-            String responseMsg = new String(responseData,0,responseLen);
-            System.out.println("接收到第一次server返回的消息" + responseMsg);
-            if(responseMsg.equals("hi")){
-                System.out.println("服务端和我说hi");
-                getHi = true;
+            if(sendMsg("hello")){
+                //对服务端返回的打招呼信息处理
+                String retForHello = recvMsg();
+                if("hi".equals(retForHello)){
+                    System.out.println("服务端和我说hi");
+                    getHi = true;
+                }
+            }else {
+                System.out.println("发送hello失败");
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -112,14 +169,12 @@ public class Client1 {
         //服务端收到你要断开的指令
         boolean getExitOk = false;
         try {
-            os.write("exit".getBytes(StandardCharsets.UTF_8));
-
-            byte[] responseData = new byte[1024];
-            int responseLen = is.read(responseData);
-            String responseMsg = new String(responseData,0,responseLen);
-            System.out.println("接收到server 针对exit的消息：" + responseMsg);
-            if(responseMsg.equals("exitOK")){
-                getExitOk = true;
+            if(sendMsg("exit")){
+                if("exitOK".equals(recvMsg())){
+                    getExitOk = true;
+                }
+            }else{
+                System.out.println("发送exit指令失败");
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -130,15 +185,19 @@ public class Client1 {
     /**
      * 向服务端汇报自己拥有的资源
      * 资源对象是pojo的Resource类实例
-     * @param r
-     * @return
+     * @param r 资源实例
+     * @return 写入对象是否成功
      */
     public static boolean reportResource(Resource r){
         boolean reportSuccess = false;
         try {
-            oos.writeObject(r);
-            oos.flush();
-            reportSuccess = true;
+            if(sendMsg("report")){
+                oos.writeObject(r);
+                oos.flush();
+                reportSuccess = true;
+            }else{
+                System.out.println("发送report指令失败");
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }

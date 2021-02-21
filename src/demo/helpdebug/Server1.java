@@ -4,16 +4,15 @@ import demo_with_database.pojo.Resource;
 import demo_with_database.utils.Constants;
 import demo_with_database.utils.JdbcUtils;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectInputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * @author divenier
@@ -31,7 +30,6 @@ public class Server1 {
             e.printStackTrace();
         }*/
         new Server1().start();
-
     }
 
     /**
@@ -71,18 +69,102 @@ public class Server1 {
 class Handler1 extends Thread{
     /**
      * clientSocket       --要处理的socket连接
-     * isRunning    --本线程是否还在运行
+     * dataInputStream    --用来接收socket的输入流，方便解析
+     * dataOutputStream   --输出流
+     * reqMesg            --接收到的信息，准备直接用换行符解析
+     * isRunning          --本线程是否还在运行
      */
     private Socket clientSocket;
+/*    private DataInputStream dis;
+    private DataOutputStream dos;*/
+    private BufferedReader br;
+    private BufferedWriter bw;
+    private PrintStream ps;
+    private ObjectInputStream ois;
+    private ObjectOutputStream oos;
+
     public Boolean isRunning;
 
     public Handler1(Socket s,Boolean isRunning){
         this.clientSocket = s;
         this.isRunning = isRunning;
+        try {
+/*            this.dis = new DataInputStream(s.getInputStream());
+            this.dos = new DataOutputStream(s.getOutputStream());*/
+            this.br = new BufferedReader(new InputStreamReader(s.getInputStream(),"UTF-8"));
+            this.bw = new BufferedWriter(new PrintWriter(s.getOutputStream()));
+            this.ps = new PrintStream(new BufferedOutputStream(s.getOutputStream()));
+            this.ois = new ObjectInputStream(s.getInputStream());
+            this.oos = new ObjectOutputStream(s.getOutputStream());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 接收客户端的信息，DataInputStream对于处理数据更方便
+     * 把服务端的函数也分开弄
+     * 1. 2/19晚，暂时不涉及报文，直接用最基础的命令
+     *      1. 需要整一个发送函数
+     *      2. 客户端对服务端返回的信息也要用readUTF()读取
+     * 2.2/21，socket的输入输出，一直不正常
+     */
+    private void recvRequest(){
+        String reqMesg = null;
+        try {
+            reqMesg = br.readLine();
+            System.out.println(reqMesg);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        switch (reqMesg){
+            case "hello":
+                System.out.println("接收到客户端的hello");
+                if(login()){
+                    System.out.println("返回hi成功");
+                }
+                break;
+            case "report":
+                Resource resObj = recvResource();
+                System.out.println("添加资源" + addResource(resObj));
+                break;
+            case "exit":
+                clientExit();
+                System.out.println("接收到客户端的退出请求");
+                break;
+            default:
+                System.out.println("客户端命令错误，请让它重新输入");
+                break;
+        }
+    }
+
+    public boolean send(String sendMsg){
+        boolean sendSuccess = false;
+        if(sendMsg == null || "".equals(sendMsg)){
+            System.out.println("发送的消息为空");
+            return false;
+        }
+        try {
+            bw.write(sendMsg);
+            //相当于手动添加了换行符，让readline可以读取
+            bw.newLine();
+            bw.flush();
+/*            ps.println(sendMsg);
+            ps.flush();*/
+            System.out.println("运行了一次send()函数，发送的消息是：" + sendMsg);
+            System.out.println("发送的string长度是" + sendMsg.length());
+            sendSuccess = true;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return sendSuccess;
     }
     /**
      * 处理请求信息，解析
      * 但socket的IO就在这，需要IO的，都要在这里进行；
+     *
+     * 后续会设计报文段，因此要对报文解析
      */
     public void parseRequest(){
         try(OutputStream os = this.clientSocket.getOutputStream();
@@ -92,9 +174,10 @@ class Handler1 extends Thread{
             byte[] recvRequestData = new byte[1024];
             int recvRequestLen = is.read(recvRequestData);
             String recvRequestMsg = new String(recvRequestData,0,recvRequestLen);
+
             if("hello".equals(recvRequestMsg)){
                 System.out.println("接收到客户端的hello");
-                os.write("hi".getBytes(StandardCharsets.UTF_8));
+                os.write("hi".getBytes(UTF_8));
                 Resource resObj = (Resource) ois.readObject();
                 System.out.println("添加资源" + addResource(resObj));
             }
@@ -103,7 +186,7 @@ class Handler1 extends Thread{
             recvRequestMsg = new String(recvRequestData,0,recvRequestLen);
             if("exit".equals(recvRequestMsg)){
                 System.out.println("接收到客户端的退出请求");
-                os.write("exitOK".getBytes(StandardCharsets.UTF_8));
+                os.write("exitOK".getBytes(UTF_8));
                 this.isRunning = false;
             }
         } catch (Exception e) {
@@ -111,6 +194,34 @@ class Handler1 extends Thread{
         }
     }
 
+    public boolean login(){
+        boolean loginSuccess = false;
+        try {
+            bw.flush();
+            //第一次使用之前，BufferedWriter可能有一些乱七八糟的
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        if(send("hi")){
+            loginSuccess = true;
+        }
+        return loginSuccess;
+    }
+    /**
+     * 接收资源对象
+     * @return 资源实例
+     */
+    public Resource recvResource(){
+        Resource resObj = null;
+        try {
+            resObj = (Resource) ois.readObject();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+        return resObj;
+    }
     /**
      * 做成添加资源
      * @return
@@ -159,6 +270,18 @@ class Handler1 extends Thread{
     }
 
     /**
+     * 处理客户端退出的一系列问题
+     * @return
+     */
+    public boolean clientExit(){
+        boolean retMsgSuccess = send("exitOK");
+        if(retMsgSuccess){
+            //返回exitOK成功后才能把状态结束
+            this.isRunning = false;
+        }
+        return retMsgSuccess;
+    }
+    /**
      * 关闭socket连接
      */
     public void closeSocket(){
@@ -175,7 +298,8 @@ class Handler1 extends Thread{
     @Override
     public void run() {
         while (isRunning){
-            parseRequest();
+//            parseRequest();
+            recvRequest();
         }
         closeSocket();
     }
