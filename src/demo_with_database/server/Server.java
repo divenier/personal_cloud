@@ -161,7 +161,8 @@ class Handler extends Thread{
                 System.out.println("接收到客户端的登录请求");
                 if(login(args[0],args[1])){
                     System.out.println("应答登录成功");
-                    send(Constants.SUCCESS_CODE + " " + "LOGIN_OK");
+                    //把登录成功的用户名再返回去
+                    send(Constants.SUCCESS_CODE + " " + args[0] + " " + "LOGIN_OK");
                 }else{
                     System.out.println("登录失败");
                     send(Constants.ERROR_CODE + " " + "LOGIN_ERROR");

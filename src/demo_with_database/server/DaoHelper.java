@@ -188,9 +188,9 @@ public class DaoHelper {
             PreparedStatement pstm = null;
             int updateRows = 0;
             if(null != connection){
-                String sql = "insert into resource (resourcename, devicename, status, code, note) " +
-                        "values(?,?,?,?,?)";
-                Object[] params = {resource.getResourceName(),resource.getDeviceName(),resource.getStatus(),resource.getCode(),resource.getNote()};
+                String sql = "insert into resource (resourcename, devicename, path, status, code, note) " +
+                        "values(?,?,?,?,?,?)";
+                Object[] params = {resource.getResourceName(),resource.getDeviceName(),resource.getPath(),resource.getStatus(),resource.getCode(),resource.getNote()};
                 updateRows = JdbcUtils.execute(connection, pstm, sql, params);
                 JdbcUtils.closeResource(null, pstm, null);
             }

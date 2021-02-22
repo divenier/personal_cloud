@@ -1,8 +1,7 @@
 package demo_with_database.client;
-
-import demo.helpdebug.Client1;
 import demo_with_database.pojo.Resource;
-
+import org.apache.commons.codec.digest.DigestUtils;
+//import org.springframework.util.DigestUtils;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.Charset;
@@ -26,6 +25,8 @@ public class Client {
     private static BufferedReader br;
     private static ObjectOutputStream oos;
     private static Scanner scanner;
+    //存储本客户端的用户名
+    private static String clientUserName;
 
     public Client(Socket clientSocket) throws IOException {
         client = clientSocket;
@@ -50,7 +51,7 @@ public class Client {
         // 定义一个布尔变量，用于退出程序
         boolean loop = true;
         while (loop) {
-            System.out.println("注册 -》声明资源-》下线");
+//            System.out.println("注册 -》声明资源-》下线");
             System.out.println("regist: 注册");
             System.out.println("login: 登录到服务器");
             System.out.println("report: 声明资源");
@@ -66,9 +67,13 @@ public class Client {
                 case "login":
                     String loginResult = login();
                     handleStatus("登录",loginResult);
+                    //如登录失败，本client就不能记录该用户名
+                    if(!loginResult.contains("200")){
+                        clientUserName = null;
+                    }
                     break;
                 case "report":
-                    Resource resource = new Resource("a.txt", "divenier", 1, "9762349ygha9sfafda", "some notes");
+                    Resource resource = readResourceMsg();
                     boolean reportSuccess = reportResource(resource);
                     if(reportSuccess){
                         System.out.println("资源声明成功");
@@ -172,8 +177,8 @@ public class Client {
      */
     public static String regist(){
         String regStatus = null;
-        String lanip = getLocalIp();
-        String publicip = getPublicIP();
+        String lanip = IPAddressHelper.getLocalIp();
+        String publicip = IPAddressHelper.getPublicIP();
         //注册指令+输入信息
         String regMsg = "regist " + readUserMsg() + " " + lanip + " " + publicip;
         if(sendMsg(regMsg)){
@@ -203,65 +208,19 @@ public class Client {
     }
 
     /**
-     * 获取本机内网ip
-     * @return 内网ip的String形式
-     */
-    private static String getLocalIp(){
-        String ip = null;
-        try {
-            ip = InetAddress.getLocalHost().getHostAddress();
-        } catch (UnknownHostException e) {
-            e.printStackTrace();
-        }
-        return ip;
-    }
-
-    /**
-     * 获取本机外网ip
-     * @return 外网ip的String形式
-     */
-    private static String getPublicIP(){
-        String ip=null;
-        try {
-            URL url = new URL("https://www.taobao.com/help/getip.php");
-            URLConnection URLconnection = url.openConnection();
-            HttpURLConnection httpConnection = (HttpURLConnection) URLconnection;
-            int responseCode = httpConnection.getResponseCode();
-            if (responseCode == HttpURLConnection.HTTP_OK) {
-                InputStream in = httpConnection.getInputStream();
-                InputStreamReader isr = new InputStreamReader(in);
-                BufferedReader bufr = new BufferedReader(isr);
-                String str;
-                while ((str = bufr.readLine()) != null) {
-                    ip=str;
-                }
-                bufr.close();
-            } else {
-                System.err.println("失败");
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        if(ip!=null){
-            char[] chs=ip.toCharArray();
-            ip="";
-            for(int i=0;i<chs.length;i++){
-                if((chs[i]>=48&&chs[i]<=57)||chs[i]==46){
-                    ip+=chs[i];
-                }
-            }
-        }
-        return ip;
-    }
-    /**
      * 和服务端打招呼
      * 登录
      */
     public static String login(){
         String loginStatus = null;
         //login username pwd
-        String loginMsg = "login " + readUserMsg();
+        String name_pwd = readUserMsg();
+
+        //先把读取到的用户名赋给类变量clientUserName，如果注册失败再设为null
+        String[] arr = name_pwd.split("\\s+");
+        clientUserName = arr[0];
+
+        String loginMsg = "login " + name_pwd;
         if(sendMsg(loginMsg)){
             String[] retForLogin = recvMsg();
             loginStatus = retForLogin[0];
@@ -307,5 +266,31 @@ public class Client {
             e.printStackTrace();
         }
         return reportSuccess;
+    }
+
+    /**
+     * 声明资源时，读取客户端输入
+     * resourceName     --输入资源名
+     * deviceName       --程序读取用户名（由login保存）
+     * path             --用户输入绝对路径（需包含文件名）
+     * status           --默认是1（自己添加自己的，自己当然在线了）
+     * @return Resource实例
+     */
+    public static Resource readResourceMsg() {
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("请输入资源名: ");
+        String resourceName = scanner.next();
+        String deviceName = clientUserName;
+
+        System.out.println("请输入资源存储绝对路径: ");
+        String path = scanner.next();
+        //转化为code的成分，绝对路径（包含文件名）+设备名
+        String codeBeforeMd5 = path + " " + deviceName;
+        String code = DigestUtils.md5Hex(codeBeforeMd5.getBytes());
+        System.out.println("请输入备注: ");
+        String note = scanner.next();
+
+        Resource resource = new Resource(resourceName,deviceName,path,1,code,note);
+        return resource;
     }
 }

@@ -12,20 +12,23 @@ import java.io.Serializable;
 public class Resource implements Serializable {
     /**
      * resourceName --资源文件名
-     * deviceName   --存储该资源的设备名
+     * deviceName   --存储该资源的设备名(username)
+     * path         --文件的绝对路径
      * status       --该资源是否可用   1-可用 0-不可用
      * code         --资源唯一编码（对  文件存储路径 + 文件名 + 设备名  使用MD5加密）
      * note         --用户report时的一些备注
      */
     private String resourceName;
     private String deviceName;
+    private String path;
     private Integer status;
     private String code;
     private String note;
 
-    public Resource(String resourceName, String deviceName, Integer status, String code, String note) {
+    public Resource(String resourceName, String deviceName, String path, Integer status, String code, String note) {
         this.resourceName = resourceName;
         this.deviceName = deviceName;
+        this.path = path;
         this.status = status;
         this.code = code;
         this.note = note;
@@ -33,6 +36,14 @@ public class Resource implements Serializable {
 
     public String getResourceName() {
         return resourceName;
+    }
+
+    public String getPath() {
+        return path;
+    }
+
+    public void setPath(String path) {
+        this.path = path;
     }
 
     public void setResourceName(String resourceName) {
