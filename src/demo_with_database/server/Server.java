@@ -244,6 +244,7 @@ class Handler extends Thread{
             loginSuccess = true;
             //登录了要把在线状态设为1
             DaoHelper.changeUserStatus(user.getUserName(),1);
+            DaoHelper.changeResourceStatus(user.getUserName(),1);
             //handler保存该socket连接的用户名
             this.clientName = username;
         }
