@@ -1,6 +1,7 @@
 package demo_with_database.server;
 
 import demo_with_database.pojo.Resource;
+import demo_with_database.pojo.User;
 import demo_with_database.utils.Constants;
 import demo_with_database.utils.JdbcUtils;
 
@@ -10,6 +11,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -147,16 +149,20 @@ class Handler extends Thread{
                 System.out.println("接收到客户端的注册请求");
                 if(regist(args[0],args[1],args[2],args[3]) == 1){
                     System.out.println("注册成功");
-                    send(Constants.SUCCESS_CODE + " " + "registOK");
+                    send(Constants.SUCCESS_CODE + " " + "REGIST_OK");
                 }else{
                     System.out.println("注册失败");
-                    send(Constants.ERROR_CODE + " " + "registERROR");
+                    send(Constants.ERROR_CODE + " " + "REGIST_ERROR");
                 }
                 break;
             case "login":
                 System.out.println("接收到客户端的登录请求");
-                if(login()){
+                if(login(args[0],args[1])){
                     System.out.println("应答登录成功");
+                    send(Constants.SUCCESS_CODE + " " + "LOGIN_OK");
+                }else{
+                    System.out.println("登陆失败");
+                    send(Constants.ERROR_CODE + " " + "LOGIN_ERROR");
                 }
                 break;
             case "report":
@@ -198,7 +204,7 @@ class Handler extends Thread{
 
     /**
      * 执行注册，要修改数据库
-     * @return 返回数据库受影响的行数  吧
+     * @return 返回数据库受影响的行数
      */
     public int regist(String username,String pwd,String lanip,String publicip){
         //受影响的行数，插入成功应该是1
@@ -234,15 +240,56 @@ class Handler extends Thread{
     }
 
     /**
-     * 登录——待完善
+     * 登录——待完善 修改用户状态
      * 数据库验证用户名+密码
      *
-     * @return
+     * @return 登录是否成功
      */
-    public boolean login(){
+    public boolean login(String username,String pwd){
         boolean loginSuccess = false;
-        if(send("hi")){
+        Connection connection = null;
+        PreparedStatement pstm = null;
+        ResultSet rs = null;
+        User user = null;
+
+        try {
+            connection = JdbcUtils.getConnection();
+            //开启JDBC事务管理
+            connection.setAutoCommit(false);
+            //开始查询数据库
+            if(null != connection){
+                String sql = "select * from user where username=?";
+                Object[] params = {username};
+                rs = JdbcUtils.execute(connection, pstm, rs, sql, params);
+                if(rs.next()){
+                    user = new User();
+                    user.setUserName(rs.getString("username"));
+                    user.setUserPassword(rs.getString("password"));
+                }
+                //因为catch中还要回滚，所以connection暂时不关闭，在finally中关闭
+                JdbcUtils.closeResource(null, pstm, null);
+            }
+            connection.commit();
+        } catch (Exception e) {
+            //插入失败要回滚
+            e.printStackTrace();
+            try {
+                System.out.println("rollback==================");
+                connection.rollback();
+            } catch (SQLException e1) {
+                e1.printStackTrace();
+            }
+        }finally{
+            JdbcUtils.closeResource(connection, null, null);
+        }
+
+        if(user == null){
+            throw new RuntimeException("用户不存在");
+        }else if(pwd.equals(user.getUserPassword())){
+            //输入的密码和查询到的用户的密码相同
             loginSuccess = true;
+            //登录了要把在线状态设为1
+            user.setStatus(1);
         }
         return loginSuccess;
     }
@@ -314,7 +361,8 @@ class Handler extends Thread{
      * @return
      */
     public boolean clientExit(){
-        boolean retMsgSuccess = send("exitOK");
+        boolean retMsgSuccess = false;
+        send(Constants.SUCCESS_CODE + " " + "EXIT_OK");
         if(retMsgSuccess){
             //返回exitOK成功后才能把状态结束
             this.isRunning = false;

@@ -61,19 +61,11 @@ public class Client {
             switch (label) {
                 case "regist":
                     String regResult = regist();
-                    if(regResult.contains("200")){
-                        System.out.println("注册成功");
-                    }else if(regResult.contains("500")){
-                        System.out.println("注册出现错误");
-                    }else{
-                        System.out.println("注册出现未知状况");
-                    }
+                    handleStatus("注册",regResult);
                     break;
                 case "login":
-                    boolean loginSuccess = login();
-                    if(loginSuccess){
-                        System.out.println("登录成功");
-                    }
+                    String loginResult = login();
+                    handleStatus("登录",loginResult);
                     break;
                 case "report":
                     Resource resource = new Resource("a.txt", "divenier", 1, "9762349ygha9sfafda", "some notes");
@@ -155,6 +147,20 @@ public class Client {
     }
 
     /**
+     * 对不同指令收到的回复状态码进行处理和回显
+     * @param cmd 客户端发出的指令 注册，登录等
+     * @param status 服务端回复的状态码（经过recvMsg及对应的各个功能函数和main函数处理后的string）
+     */
+    public static void handleStatus(String cmd,String status){
+        if(status.contains("200")){
+            System.out.println(cmd + "成功");
+        }else if(status.contains("500")){
+            System.out.println(cmd + "出现错误");
+        }else{
+            System.out.println(cmd + "出现未知状况");
+        }
+    }
+    /**
      * 注册
      * 上报信息包含：
      * username 用户名
@@ -163,12 +169,12 @@ public class Client {
      * publicip
      * @return 注册的结果
      */
-    public static String regist() throws UnknownHostException {
+    public static String regist(){
         String regStatus = null;
         String lanip = getLocalIp();
         String publicip = getPublicIP();
         //注册指令+输入信息
-        String regMsg = "regist " + readRegMsg() + " " + lanip + " " + publicip;
+        String regMsg = "regist " + readUserMsg() + " " + lanip + " " + publicip;
         if(sendMsg(regMsg)){
             String[] retForReg = recvMsg();
             regStatus = retForReg[0];
@@ -182,11 +188,11 @@ public class Client {
      * 用一个新的scanner读取注册时输入的信息
      * @return 用户名+密码（用于注册）
      */
-    public static String readRegMsg() {
+    public static String readUserMsg() {
         Scanner scanner = new Scanner(System.in);
-        System.out.println("请输入您的用户名: ");
+        System.out.println("请输入用户名: ");
         String user = scanner.next();
-        System.out.println("请设置密码: ");
+        System.out.println("请输入密码: ");
         String passwd = scanner.next();
 
         String msg = user + " " + passwd;
@@ -197,7 +203,7 @@ public class Client {
 
     /**
      * 获取本机内网ip
-     * @return 内网ip
+     * @return 内网ip的String形式
      */
     private static String getLocalIp(){
         String ip = null;
@@ -211,7 +217,7 @@ public class Client {
 
     /**
      * 获取本机外网ip
-     * @return
+     * @return 外网ip的String形式
      */
     private static String getPublicIP(){
         String ip=null;
@@ -221,14 +227,12 @@ public class Client {
             HttpURLConnection httpConnection = (HttpURLConnection) URLconnection;
             int responseCode = httpConnection.getResponseCode();
             if (responseCode == HttpURLConnection.HTTP_OK) {
-//                System.out.println("成功");
                 InputStream in = httpConnection.getInputStream();
                 InputStreamReader isr = new InputStreamReader(in);
                 BufferedReader bufr = new BufferedReader(isr);
                 String str;
                 while ((str = bufr.readLine()) != null) {
                     ip=str;
-//                    System.out.println(str);
                 }
                 bufr.close();
             } else {
@@ -239,7 +243,6 @@ public class Client {
         }
 
         if(ip!=null){
-
             char[] chs=ip.toCharArray();
             ip="";
             for(int i=0;i<chs.length;i++){
@@ -254,23 +257,17 @@ public class Client {
      * 和服务端打招呼
      * 登录
      */
-    public static boolean login(){
-        //是否得到了服务端的hi回应
-        boolean getHi = false;
-
-        //打招呼，第一次
-        if(sendMsg("hello")){
-            //对服务端返回的打招呼信息处理
-            String retForHello[] = recvMsg();
-            //如果含有注册成功码
-            if(retForHello[0].contains("200")){
-                System.out.println("登录成功");
-                getHi = true;
-            }
-        }else {
-            System.out.println("发送hello失败");
+    public static String login(){
+        String loginStatus = null;
+        //login username pwd
+        String loginMsg = "login " + readUserMsg();
+        if(sendMsg(loginMsg)){
+            String[] retForLogin = recvMsg();
+            loginStatus = retForLogin[0];
+        }else{
+            System.out.println("发送登录指令失败");
         }
-        return getHi;
+        return loginStatus;
     }
 
     /**
@@ -287,7 +284,6 @@ public class Client {
         }else{
             System.out.println("发送exit指令失败");
         }
-
         return getExitOk;
     }
     /**
