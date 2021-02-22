@@ -4,9 +4,6 @@ import org.apache.commons.codec.digest.DigestUtils;
 //import org.springframework.util.DigestUtils;
 import java.io.*;
 import java.net.*;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Scanner;
 
 /**
@@ -75,6 +72,10 @@ public class Client {
                     }
                     break;
                 case "report":
+                    if(!isLogin()){
+                        System.out.println("请先登录再进行操作");
+                        break;
+                    }
                     Resource resource = readResourceMsg();
                     boolean reportSuccess = reportResource(resource);
                     if(reportSuccess){
@@ -82,6 +83,10 @@ public class Client {
                     }
                     break;
                 case "list":
+                    if(!isLogin()){
+                        System.out.println("请先登录再进行操作");
+                        break;
+                    }
                     String cmdMsg = readListCmd();
                     String[] reourceList = list(cmdMsg);
                     for(String s: reourceList){
@@ -98,6 +103,7 @@ public class Client {
                         }
                         loop = false;
                     }
+                    break;
                 default:
                     break;
             }
@@ -162,6 +168,9 @@ public class Client {
         return receivedMsg;
     }
 
+    public static boolean isLogin(){
+        return clientUserName == null ? false : true;
+    }
     /**
      * 对不同指令收到的回复状态码进行处理和回显
      * @param cmd 客户端发出的指令 注册，登录等

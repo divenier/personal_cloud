@@ -3,19 +3,10 @@ package demo_with_database.server;
 import demo_with_database.pojo.Resource;
 import demo_with_database.pojo.User;
 import demo_with_database.utils.Constants;
-import demo_with_database.utils.JdbcUtils;
 
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.charset.StandardCharsets;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * @author divenier
@@ -191,6 +182,11 @@ class Handler extends Thread{
         }
     }
 
+    /**
+     * 给客户端发送消息
+     * @param sendMsg
+     * @return
+     */
     public boolean send(String sendMsg){
         boolean sendSuccess = false;
         if(sendMsg == null || "".equals(sendMsg)){
@@ -212,6 +208,14 @@ class Handler extends Thread{
         }
 
         return sendSuccess;
+    }
+
+    /**
+     * 判断当前是否已登录，如未登录则权限受限，不允许report和list
+     * @return 当前是否已登录
+     */
+    public boolean isLogin(){
+        return clientName == null ? false : true;
     }
 
     /**
@@ -302,6 +306,7 @@ class Handler extends Thread{
                 //返回exitOK成功后才能把状态结束
                 this.isRunning = false;
                 retMsgSuccess = true;
+                clientName = null;
             }else{
                 System.out.println("下线用户时出现意外——请检查数据库");
             }
