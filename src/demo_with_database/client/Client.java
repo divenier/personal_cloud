@@ -78,6 +78,7 @@ public class Client {
                     boolean exitSuccess = exit();
                     if(exitSuccess){
                         System.out.println("服务端接收到退出请求");
+                        //让自己这边结束运行
                         if (socket != null) {
                             socket.close();
                         }

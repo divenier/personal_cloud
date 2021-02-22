@@ -86,8 +86,10 @@ class Handler extends Thread{
     private PrintStream ps;
     private ObjectInputStream ois;
     private ObjectOutputStream oos;
-
     public Boolean isRunning;
+
+    //存储客户端socket的登录用户名
+    private String clientName;
 
     public Handler(Socket s,Boolean isRunning){
         this.clientSocket = s;
@@ -147,7 +149,7 @@ class Handler extends Thread{
         switch (cmd){
             case "regist":
                 System.out.println("接收到客户端的注册请求");
-                if(regist(args[0],args[1],args[2],args[3]) == 1){
+                if(regist(args[0],args[1],args[2],args[3])){
                     System.out.println("注册成功");
                     send(Constants.SUCCESS_CODE + " " + "REGIST_OK");
                 }else{
@@ -161,17 +163,18 @@ class Handler extends Thread{
                     System.out.println("应答登录成功");
                     send(Constants.SUCCESS_CODE + " " + "LOGIN_OK");
                 }else{
-                    System.out.println("登陆失败");
+                    System.out.println("登录失败");
                     send(Constants.ERROR_CODE + " " + "LOGIN_ERROR");
                 }
                 break;
             case "report":
                 Resource resObj = recvResource();
-                System.out.println("添加资源" + addResource(resObj));
+                System.out.println("添加资源" + DaoHelper.addResource(resObj));
                 break;
             case "exit":
-                clientExit();
-                System.out.println("接收到客户端的退出请求");
+                if(clientExit()){
+                    System.out.println("退出成功");
+                }
                 break;
             default:
                 System.out.println("客户端命令错误，请让它重新输入");
@@ -206,93 +209,38 @@ class Handler extends Thread{
      * 执行注册，要修改数据库
      * @return 返回数据库受影响的行数
      */
-    public int regist(String username,String pwd,String lanip,String publicip){
-        //受影响的行数，插入成功应该是1
-        int updateRows = 0;
-        Connection connection = null;
-        try {
-            connection = JdbcUtils.getConnection();
-            //开启JDBC事务管理
-            connection.setAutoCommit(false);
-            //开始插入数据库
-            PreparedStatement pstm = null;
-            if(null != connection){
-                String sql = "insert into user(username, password, status, lanip, publicip) VALUES (?,?,?,?,?)";
-                Object[] params = {username,pwd,1,lanip,publicip};
-                updateRows = JdbcUtils.execute(connection, pstm, sql, params);
-                //因为catch中还要回滚，所以connection暂时不关闭，在finally中关闭
-                JdbcUtils.closeResource(null, pstm, null);
-            }
-            connection.commit();
-        } catch (Exception e) {
-            //插入失败要回滚
-            e.printStackTrace();
-            try {
-                System.out.println("rollback==================");
-                connection.rollback();
-            } catch (SQLException e1) {
-                e1.printStackTrace();
-            }
-        }finally{
-            JdbcUtils.closeResource(connection, null, null);
+    public boolean regist(String username,String pwd,String lanip,String publicip){
+        boolean addSuccess = false;
+        User regUser = new User(username,pwd,0,lanip,publicip);
+        int resultForAddUser = DaoHelper.addUser(regUser);
+        if(resultForAddUser == 1){
+            addSuccess = true;
         }
-        return updateRows;
+        return addSuccess;
     }
 
     /**
-     * 登录——待完善 修改用户状态
+     * 登录——待完善 修改用户状态 ——已完善
      * 数据库验证用户名+密码
-     *
      * @return 登录是否成功
      */
     public boolean login(String username,String pwd){
         boolean loginSuccess = false;
-        Connection connection = null;
-        PreparedStatement pstm = null;
-        ResultSet rs = null;
-        User user = null;
 
-        try {
-            connection = JdbcUtils.getConnection();
-            //开启JDBC事务管理
-            connection.setAutoCommit(false);
-            //开始查询数据库
-            if(null != connection){
-                String sql = "select * from user where username=?";
-                Object[] params = {username};
-                rs = JdbcUtils.execute(connection, pstm, rs, sql, params);
-                if(rs.next()){
-                    user = new User();
-                    user.setUserName(rs.getString("username"));
-                    user.setUserPassword(rs.getString("password"));
-                }
-                //因为catch中还要回滚，所以connection暂时不关闭，在finally中关闭
-                JdbcUtils.closeResource(null, pstm, null);
-            }
-            connection.commit();
-        } catch (Exception e) {
-            //插入失败要回滚
-            e.printStackTrace();
-            try {
-                System.out.println("rollback==================");
-                connection.rollback();
-            } catch (SQLException e1) {
-                e1.printStackTrace();
-            }
-        }finally{
-            JdbcUtils.closeResource(connection, null, null);
-        }
-
+        User user = DaoHelper.getUserByName(username);
         if(user == null){
             throw new RuntimeException("用户不存在");
         }else if(pwd.equals(user.getUserPassword())){
             //输入的密码和查询到的用户的密码相同
             loginSuccess = true;
             //登录了要把在线状态设为1
-            user.setStatus(1);
+            DaoHelper.changeUserStatus(user.getUserName(),1);
+            //handler保存该socket连接的用户名
+            this.clientName = username;
         }
         return loginSuccess;
     }
+
     /**
      * 接收资源对象
      * @return 资源实例
@@ -310,62 +258,26 @@ class Handler extends Thread{
     }
 
     /**
-     * 做成添加资源
-     * @return 添加资源是否成功
-     */
-    public boolean addResource(Resource resource){
-        boolean addSucceess = false;
-        Connection connection = null;
-        try {
-            connection = JdbcUtils.getConnection();
-            //开启JDBC事务管理
-            connection.setAutoCommit(false);
-
-            //开始插入数据库
-            PreparedStatement pstm = null;
-            int updateRows = 0;
-            if(null != connection){
-                String sql = "insert into resource (resourcename, devicename, status, code, note) " +
-                        "values(?,?,?,?,?)";
-                Object[] params = {resource.getResourceName(),resource.getDeviceName(),resource.getStatus(),resource.getCode(),resource.getNote()};
-                updateRows = JdbcUtils.execute(connection, pstm, sql, params);
-                JdbcUtils.closeResource(null, pstm, null);
-            }
-
-            connection.commit();
-            if(updateRows > 0){
-                addSucceess = true;
-                System.out.println("add success!");
-            }else{
-                System.out.println("add failed!");
-            }
-
-        } catch (Exception e) {
-            //插入失败要回滚
-            e.printStackTrace();
-            try {
-                System.out.println("rollback==================");
-                connection.rollback();
-            } catch (SQLException e1) {
-                // TODO Auto-generated catch block
-                e1.printStackTrace();
-            }
-        }finally{
-            JdbcUtils.closeResource(connection, null, null);
-        }
-        return addSucceess;
-    }
-
-    /**
      * 处理客户端退出的一系列问题
+     * 1. 给客户端返回报文
+     * 2. 把用户下线
+     * 3. 把所有该用户持有的资源下线
+     * 4. 终止处理线程
      * @return
      */
     public boolean clientExit(){
         boolean retMsgSuccess = false;
-        send(Constants.SUCCESS_CODE + " " + "EXIT_OK");
-        if(retMsgSuccess){
-            //返回exitOK成功后才能把状态结束
-            this.isRunning = false;
+        if(send(Constants.SUCCESS_CODE + " " + "EXIT_OK")){
+            if(DaoHelper.changeUserStatus(this.clientName,0) == 1){
+                int resourceStatusChanged = DaoHelper.changeResourceStatus(this.clientName,0);
+                //返回exitOK成功后才能把状态结束
+                this.isRunning = false;
+                retMsgSuccess = true;
+            }else{
+                System.out.println("下线用户时出现意外——请检查数据库");
+            }
+        }else{
+            System.out.println("返回exit消息失败");
         }
         return retMsgSuccess;
     }
@@ -381,7 +293,6 @@ class Handler extends Thread{
             }
         }
     }
-
 
     @Override
     public void run() {
