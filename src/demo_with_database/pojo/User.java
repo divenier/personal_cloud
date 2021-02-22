@@ -26,6 +26,7 @@ public class User {
         this.lanIp = lanIp;
         this.publicIp = publicIp;
     }
+    public User(){}
 
     public String getUserName() {
         return userName;
