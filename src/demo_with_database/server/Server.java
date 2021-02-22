@@ -172,6 +172,14 @@ class Handler extends Thread{
                 Resource resObj = recvResource();
                 System.out.println("添加资源" + DaoHelper.addResource(resObj));
                 break;
+            case "list":
+                String s = list(args[0]);
+                if(send(s)){
+                    System.out.println("返回资源列表成功");
+                }else{
+                    System.out.println("返回资源列表失败");
+                }
+                break;
             case "exit":
                 if(clientExit()){
                     System.out.println("退出成功");
@@ -256,6 +264,25 @@ class Handler extends Thread{
             e.printStackTrace();
         }
         return resObj;
+    }
+
+    /**
+     * 查询结果
+     * @param arg -all查询所有东西 -文件名 查询该文件
+     * @return 查询结果，不同条用&分隔开，可以用于直接返回给客户端
+     *
+     */
+    public String list(String arg){
+        Resource[] resourceList = DaoHelper.getResourceList(arg);
+        StringBuilder sb = new StringBuilder();
+        for (Resource r:resourceList) {
+            sb.append(r.getResourceName() + " " + r.getDeviceName() + " " + r.getPath() + " " + r.getStatus() + " " + r.getCode() + " " + r.getNote());
+            //分割不同的资源
+            sb.append("&");
+        }
+        //删掉最后一个&
+        sb.deleteCharAt(sb.length()-1);
+        return sb.toString();
     }
 
     /**

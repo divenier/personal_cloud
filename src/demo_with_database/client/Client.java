@@ -6,6 +6,7 @@ import java.io.*;
 import java.net.*;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Scanner;
 
 /**
@@ -55,6 +56,7 @@ public class Client {
             System.out.println("regist: 注册");
             System.out.println("login: 登录到服务器");
             System.out.println("report: 声明资源");
+            System.out.println("list: 查看资源列表");
             System.out.println("exit: 申请下线");
 
             label = scanner.next();
@@ -77,6 +79,13 @@ public class Client {
                     boolean reportSuccess = reportResource(resource);
                     if(reportSuccess){
                         System.out.println("资源声明成功");
+                    }
+                    break;
+                case "list":
+                    String cmdMsg = readListCmd();
+                    String[] reourceList = list(cmdMsg);
+                    for(String s: reourceList){
+                        System.out.println(s);
                     }
                     break;
                 case "exit":
@@ -134,7 +143,7 @@ public class Client {
      * 把读取/接收回复的实现放到一个函数中
      * @return 接收到的String
      */
-    public static String[] recvMsg() {
+    public static String recvMsg() {
         String receivedMsg = null;
         try {
             receivedMsg = br.readLine();
@@ -148,8 +157,9 @@ public class Client {
         }
         //\\s+表示匹配任意>1个空格
         System.out.println(receivedMsg);
-        String[] msgArr = receivedMsg.split("\\s+");
-        return msgArr;
+//        String[] msgArr = receivedMsg.split("\\s+");
+//        return msgArr;
+        return receivedMsg;
     }
 
     /**
@@ -182,7 +192,7 @@ public class Client {
         //注册指令+输入信息
         String regMsg = "regist " + readUserMsg() + " " + lanip + " " + publicip;
         if(sendMsg(regMsg)){
-            String[] retForReg = recvMsg();
+            String[] retForReg = recvMsg().split("\\s+");
             regStatus = retForReg[0];
         }else{
             System.out.println("发送注册指令失败");
@@ -202,14 +212,11 @@ public class Client {
         String passwd = scanner.next();
 
         String msg = user + " " + passwd;
-        // 用完扫描器需要关闭
-        //scanner.close();
         return msg;
     }
 
     /**
-     * 和服务端打招呼
-     * 登录
+     * 登录，
      */
     public static String login(){
         String loginStatus = null;
@@ -222,7 +229,7 @@ public class Client {
 
         String loginMsg = "login " + name_pwd;
         if(sendMsg(loginMsg)){
-            String[] retForLogin = recvMsg();
+            String[] retForLogin = recvMsg().split("\\s+");;
             loginStatus = retForLogin[0];
         }else{
             System.out.println("发送登录指令失败");
@@ -231,13 +238,38 @@ public class Client {
     }
 
     /**
+     * list命令时，提醒用户输入并读取用户输入命令
+     * @return list + arg(all/otherFileName)
+     */
+    public static String readListCmd(){
+        System.out.println("list all: 查看所有资源");
+        System.out.println("list 文件名: 查看所有这个文件的状态");
+
+        Scanner scanner = new Scanner(System.in);
+        String cmdMsg = scanner.nextLine();
+        return cmdMsg;
+    }
+
+    /**
+     * 返回查看的结果
+     * @param listCmd
+     * @return 一个长String，包含所有查询到的结果，查询结果用&分割
+     */
+    public static String[] list(String listCmd){
+        String[] retForList = null;
+        if(sendMsg(listCmd)){
+            retForList = recvMsg().split("&");
+        }
+        return retForList;
+    }
+    /**
      * 给服务端发送断开连接指令
      */
     public static boolean exit(){
         //服务端收到你要断开的指令
         boolean getExitOk = false;
         if(sendMsg("exit")){
-            String[] retForExit = recvMsg();
+            String[] retForExit = recvMsg().split("\\s+");;
             if(retForExit[0].contains("200")){
                 getExitOk = true;
             }

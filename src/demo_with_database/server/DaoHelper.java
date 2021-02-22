@@ -8,6 +8,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 
 /**
  * @author divenier
@@ -36,10 +37,10 @@ public class DaoHelper {
                 //初始注册未登录，状态为不可用
                 Object[] params = {user.getUserName(),user.getUserPassword(),0,user.getLanIp(),user.getPublicIp()};
                 updateRows = JdbcUtils.execute(connection, pstm, sql, params);
+                connection.commit();
                 //因为catch中还要回滚，所以connection暂时不关闭，在finally中关闭
                 JdbcUtils.closeResource(null, pstm, null);
             }
-            connection.commit();
         } catch (Exception e) {
             //插入失败要回滚
             e.printStackTrace();
@@ -68,9 +69,7 @@ public class DaoHelper {
 
         try {
             connection = JdbcUtils.getConnection();
-            //开启JDBC事务管理
             connection.setAutoCommit(false);
-            //开始查询数据库
             if(null != connection){
                 String sql = "select * from user where username=?";
                 Object[] params = {name};
@@ -83,12 +82,10 @@ public class DaoHelper {
                     user.setLanIp(rs.getString("lanip"));
                     user.setPublicIp(rs.getString("publicip"));
                 }
-                //因为catch中还要回滚，所以connection暂时不关闭，在finally中关闭
+                connection.commit();
                 JdbcUtils.closeResource(null, pstm, null);
             }
-            connection.commit();
         } catch (Exception e) {
-            //插入失败要回滚
             e.printStackTrace();
             try {
                 System.out.println("rollback==================");
@@ -120,9 +117,9 @@ public class DaoHelper {
                 String sql = "update user set status = ? where username = ?;";
                 Object[] params = {status,username};
                 affactRows = JdbcUtils.execute(connection, pstm, sql, params);
+                connection.commit();
                 JdbcUtils.closeResource(null, pstm, null);
             }
-            connection.commit();
         } catch (Exception e) {
             e.printStackTrace();
             try {
@@ -155,9 +152,9 @@ public class DaoHelper {
                 String sql = "update resource set status = ? where devicename = ?;";
                 Object[] params = {status,username};
                 affactRows = JdbcUtils.execute(connection, pstm, sql, params);
+                connection.commit();
                 JdbcUtils.closeResource(null, pstm, null);
             }
-            connection.commit();
         } catch (Exception e) {
             e.printStackTrace();
             try {
@@ -173,6 +170,58 @@ public class DaoHelper {
     }
 
     /**
+     *
+     * @param arg all/文件名
+     * @return 查询到的resource数组
+     */
+    public static Resource[] getResourceList(String arg){
+        Connection connection = null;
+        PreparedStatement pstm = null;
+        ResultSet rs = null;
+        ArrayList<Resource> arrayList = new ArrayList<>();
+
+        try {
+            connection = JdbcUtils.getConnection();
+            connection.setAutoCommit(false);
+            if(null != connection){
+                String sql = null;
+                //查询的是所有资源
+                if("all".equalsIgnoreCase(arg)){
+                    sql = "select * from resource";
+                    Object[] params = {};
+                    rs = JdbcUtils.execute(connection, pstm, rs, sql, params);
+                }else{
+                    //查询某个资源
+                    sql = "select * from resource where resourceName = ?";
+                    Object[] params = {arg};
+                    rs = JdbcUtils.execute(connection, pstm, rs, sql, params);
+                }
+                if(rs.next()){
+                    Resource r = new Resource(rs.getString("resourceName"),rs.getString("deviceName"),rs.getString("path"),rs.getInt("status"),rs.getString("code"),rs.getString("note"));
+                    arrayList.add(r);
+                }
+                connection.commit();
+                JdbcUtils.closeResource(null, pstm, null);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            try {
+                System.out.println("rollback==================");
+                connection.rollback();
+            } catch (SQLException e1) {
+                e1.printStackTrace();
+            }
+        }finally{
+            JdbcUtils.closeResource(connection, null, null);
+        }
+
+        Resource[] resourceArr = new Resource[arrayList.size()];
+        for (int i = 0; i < arrayList.size(); i++) {
+            resourceArr[i] = arrayList.get(i);
+        }
+        return resourceArr;
+    }
+    /**
      * 做成添加资源
      * @return 添加资源是否成功
      */
@@ -181,10 +230,7 @@ public class DaoHelper {
         Connection connection = null;
         try {
             connection = JdbcUtils.getConnection();
-            //开启JDBC事务管理
             connection.setAutoCommit(false);
-
-            //开始插入数据库
             PreparedStatement pstm = null;
             int updateRows = 0;
             if(null != connection){
@@ -192,25 +238,21 @@ public class DaoHelper {
                         "values(?,?,?,?,?,?)";
                 Object[] params = {resource.getResourceName(),resource.getDeviceName(),resource.getPath(),resource.getStatus(),resource.getCode(),resource.getNote()};
                 updateRows = JdbcUtils.execute(connection, pstm, sql, params);
+                connection.commit();
                 JdbcUtils.closeResource(null, pstm, null);
             }
-
-            connection.commit();
             if(updateRows > 0){
                 addSucceess = true;
                 System.out.println("add success!");
             }else{
                 System.out.println("add failed!");
             }
-
         } catch (Exception e) {
-            //插入失败要回滚
             e.printStackTrace();
             try {
                 System.out.println("rollback==================");
                 connection.rollback();
             } catch (SQLException e1) {
-                // TODO Auto-generated catch block
                 e1.printStackTrace();
             }
         }finally{
