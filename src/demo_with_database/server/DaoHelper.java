@@ -33,9 +33,9 @@ public class DaoHelper {
             //开始插入数据库
             PreparedStatement pstm = null;
             if(null != connection){
-                String sql = "insert into user(username, password, status, lanip, publicip) VALUES (?,?,?,?,?)";
+                String sql = "insert into user(username, password, status, lanip, publicip, port) VALUES (?,?,?,?,?,?)";
                 //初始注册未登录，状态为不可用
-                Object[] params = {user.getUserName(),user.getUserPassword(),0,user.getLanIp(),user.getPublicIp()};
+                Object[] params = {user.getUserName(),user.getUserPassword(),0,user.getLanIp(),user.getPublicIp(),user.getPort()};
                 updateRows = JdbcUtils.execute(connection, pstm, sql, params);
                 connection.commit();
                 //因为catch中还要回滚，所以connection暂时不关闭，在finally中关闭
@@ -196,7 +196,7 @@ public class DaoHelper {
                     Object[] params = {arg};
                     rs = JdbcUtils.execute(connection, pstm, rs, sql, params);
                 }
-                if(rs.next()){
+                while(rs.next()){
                     Resource r = new Resource(rs.getString("resourceName"),rs.getString("deviceName"),rs.getString("path"),rs.getInt("status"),rs.getString("code"),rs.getString("note"));
                     arrayList.add(r);
                 }
@@ -220,6 +220,44 @@ public class DaoHelper {
             resourceArr[i] = arrayList.get(i);
         }
         return resourceArr;
+    }
+
+    /**
+     * 根据资源唯一编码得到Resource实例
+     * @param code 唯一编码
+     * @return 查询到的Resource实例
+     */
+    public static Resource getResourceByCode(String code){
+        Connection connection = null;
+        PreparedStatement pstm = null;
+        ResultSet rs = null;
+        Resource resourceFound = null;
+
+        try {
+            connection = JdbcUtils.getConnection();
+            connection.setAutoCommit(false);
+            if(null != connection){
+                String sql = "select * from resource where code = ?";
+                Object[] params = {code};
+                rs = JdbcUtils.execute(connection, pstm, rs, sql, params);
+                if(rs.next()){
+                    resourceFound = new Resource(rs.getString("resourceName"),rs.getString("deviceName"),rs.getString("path"),rs.getInt("status"),code,rs.getString("note"));
+                }
+                connection.commit();
+                JdbcUtils.closeResource(null, pstm, null);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            try {
+                System.out.println("rollback==================");
+                connection.rollback();
+            } catch (SQLException e1) {
+                e1.printStackTrace();
+            }
+        }finally{
+            JdbcUtils.closeResource(connection, null, null);
+        }
+        return resourceFound;
     }
     /**
      * 做成添加资源

@@ -25,6 +25,8 @@ public class Client {
     private static Scanner scanner;
     //存储本客户端的用户名
     private static String clientUserName;
+    //本客户端的端口号
+    private static Integer portNum;
 
     public Client(Socket clientSocket) throws IOException {
         client = clientSocket;
@@ -34,11 +36,13 @@ public class Client {
         bw = new BufferedWriter(new PrintWriter(os));
         ps = new PrintStream(new BufferedOutputStream(os));
         oos = new ObjectOutputStream(clientSocket.getOutputStream());
+        portNum = clientSocket.getPort();
     }
 
     public static void main(String[] args) throws IOException {
         System.out.println("------客户端开始运行--------");
-        Socket socket = new Socket(InetAddress.getByName("localhost"), 6666);
+        int port = 6666;
+        Socket socket = new Socket(InetAddress.getByName("localhost"), port);
         //给类变量赋值
         new Client(socket);
 
@@ -49,11 +53,11 @@ public class Client {
         // 定义一个布尔变量，用于退出程序
         boolean loop = true;
         while (loop) {
-//            System.out.println("注册 -》声明资源-》下线");
             System.out.println("regist: 注册");
             System.out.println("login: 登录到服务器");
             System.out.println("report: 声明资源");
             System.out.println("list: 查看资源列表");
+            System.out.println("get: 获取资源");
             System.out.println("exit: 申请下线");
 
             label = scanner.next();
@@ -89,9 +93,19 @@ public class Client {
                     }
                     String cmdMsg = readListCmd();
                     String[] reourceList = list(cmdMsg);
+                    //如果没有查到，就直接输出错误码，没毛病
                     for(String s: reourceList){
                         System.out.println(s);
                     }
+                    break;
+                case "get":
+                    if(!isLogin()){
+                        System.out.println("请先登录再进行操作");
+                        break;
+                    }
+                    String cmdForGet = readGetCmd();
+                    String retForGet = getResource(cmdForGet);
+                    System.out.println(retForGet);
                     break;
                 case "exit":
                     boolean exitSuccess = exit();
@@ -186,20 +200,22 @@ public class Client {
         }
     }
     /**
-     * 注册
+     * 注册（由于port是读取到的，因此仅能注册自己的连接）
      * 上报信息包含：
      * username 用户名
      * password 密码
      * lanip
      * publicip
+     * port 是本客户端的socket端口号
      * @return 注册的结果
      */
     public static String regist(){
         String regStatus = null;
         String lanip = IPAddressHelper.getLocalIp();
         String publicip = IPAddressHelper.getPublicIP();
+        String portString = portNum.toString();
         //注册指令+输入信息
-        String regMsg = "regist " + readUserMsg() + " " + lanip + " " + publicip;
+        String regMsg = "regist " + readUserMsg() + " " + lanip + " " + publicip + " " + portString;
         if(sendMsg(regMsg)){
             String[] retForReg = recvMsg().split("\\s+");
             regStatus = retForReg[0];
@@ -270,6 +286,52 @@ public class Client {
             retForList = recvMsg().split("&");
         }
         return retForList;
+    }
+
+    /**
+     * 提示用户输入要获取的文件的参数，并读取参数
+     * @return get + code
+     */
+    public static String readGetCmd(){
+        System.out.println("请输入资源code（唯一编码）");
+        Scanner scanner = new Scanner(System.in);
+        String resourceCode = scanner.nextLine();
+
+        return "get " + resourceCode;
+    }
+
+    /**
+     * 进行文件传输
+     * 1. 发送get指令给server，server验证请求资源的合法性
+     * 2. 根据deviceName 查询到资源客户端A，并与客户端建立连接（用固定的端口号？？）
+     * 3. 两个客户端进行传输
+     * @return 传输结果+存储位置
+     */
+    public static String getResource(String cmdAndCode){
+        //发送命令成功
+        if(sendMsg(cmdAndCode)){
+            String[] retForGet = recvMsg().split("\\s+");
+            //如果没有成功状态码
+            if(!retForGet[0].contains("200")){
+                System.out.println("get请求失败");
+                return "FAILED";
+            }else{
+                //与其他客户端建立连接，传输文件
+/*                Socket otherClient = getResFromOtherClinet();
+                OtherClient oc = new OtherClient(otherClient);
+                String msg = oc.createScan();
+                oc.requestRes(msg);
+                //将资源保存在本地
+                oc.saveRes();
+
+                //同时，再向服务器申明该资源
+                String[] data = msg.split("&");
+                String name = data[1];
+                String code = data[2];
+                declToServerAgain(name, code);*/
+            }
+        }
+        return null;
     }
     /**
      * 给服务端发送断开连接指令

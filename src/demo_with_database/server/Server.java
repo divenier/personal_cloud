@@ -24,7 +24,6 @@ public class Server {
             e.printStackTrace();
         }*/
         new Server().start();
-
     }
 
     /**
@@ -113,7 +112,7 @@ class Handler extends Thread{
         String cmd = null;
         //用于按照正则表达式分割信息
         String[] arr;
-        String[] args = new String[4];
+        String[] args = new String[5];
         /**
          * regist       -- cmd + username + pwd + lanip + publicip
          * login        -- cmd + username + pwd
@@ -140,7 +139,7 @@ class Handler extends Thread{
         switch (cmd){
             case "regist":
                 System.out.println("接收到客户端的注册请求");
-                if(regist(args[0],args[1],args[2],args[3])){
+                if(regist(args[0],args[1],args[2],args[3],Integer.parseInt(args[4]))){
                     System.out.println("注册成功");
                     send(Constants.SUCCESS_CODE + " " + "REGIST_OK");
                 }else{
@@ -169,6 +168,13 @@ class Handler extends Thread{
                     System.out.println("返回资源列表成功");
                 }else{
                     System.out.println("返回资源列表失败");
+                }
+                break;
+            case "get":
+                if(getResourceStatus(args[0])){
+                    System.out.println("请求资源可用");
+                }else{
+                    System.out.println("请求资源不可用");
                 }
                 break;
             case "exit":
@@ -222,9 +228,9 @@ class Handler extends Thread{
      * 执行注册，要修改数据库
      * @return 返回数据库受影响的行数
      */
-    public boolean regist(String username,String pwd,String lanip,String publicip){
+    public boolean regist(String username,String pwd,String lanip,String publicip,Integer port){
         boolean addSuccess = false;
-        User regUser = new User(username,pwd,0,lanip,publicip);
+        User regUser = new User(username,pwd,0,lanip,publicip,port);
         int resultForAddUser = DaoHelper.addUser(regUser);
         if(resultForAddUser == 1){
             addSuccess = true;
@@ -279,6 +285,10 @@ class Handler extends Thread{
      */
     public String list(String arg){
         Resource[] resourceList = DaoHelper.getResourceList(arg);
+        //如果没有查到，
+        if(resourceList.length == 0){
+            return Constants.ERROR_CODE + " NO_RESOURCE_FOUND";
+        }
         StringBuilder sb = new StringBuilder();
         for (Resource r:resourceList) {
             sb.append(r.getResourceName() + " " + r.getDeviceName() + " " + r.getPath() + " " + r.getStatus() + " " + r.getCode() + " " + r.getNote());
@@ -288,6 +298,27 @@ class Handler extends Thread{
         //删掉最后一个&
         sb.deleteCharAt(sb.length()-1);
         return sb.toString();
+    }
+
+    /**
+     * 判断用户请求的资源是否可用
+     * @return
+     */
+    public boolean getResourceStatus(String code){
+        /**
+         * 1. 从数据库中查询文件绝对路径和对应状态
+         * 2. if(status != 1) 不可用，重新输入命令
+         */
+        boolean available = false;
+        Resource resourceFound = DaoHelper.getResourceByCode(code);
+        if(resourceFound.getStatus() != 1){
+            send(Constants.ERROR_CODE + " RESOURCE_OUTLINE");
+            System.out.println("客户端请求的这个资源不在线，没法用");
+        }else{
+            send(Constants.SUCCESS_CODE + " SERVER_RECEIVED");
+            available = true;
+        }
+        return available;
     }
 
     /**
