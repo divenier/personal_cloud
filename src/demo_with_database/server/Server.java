@@ -7,6 +7,7 @@ import demo_with_database.utils.Constants;
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 
 /**
  * @author divenier
@@ -47,6 +48,8 @@ public class Server {
             num++;
             Handler handler = new Handler(clientSocket,true);
             handler.start();
+//            Detection detection = new Detection(clientSocket,true);
+//            detection.start();
         }
     }
 
@@ -69,11 +72,11 @@ class Handler extends Thread{
      * isRunning          --本线程是否还在运行
      */
     private Socket clientSocket;
-    /*    private DataInputStream dis;
-        private DataOutputStream dos;*/
-    private BufferedReader br;
-    private BufferedWriter bw;
-    private PrintStream ps;
+    public InputStream is;
+    public OutputStream os;
+//    private BufferedReader br;
+//    private BufferedWriter bw;
+//    private PrintStream ps;
     private ObjectInputStream ois;
     private ObjectOutputStream oos;
     public Boolean isRunning;
@@ -85,89 +88,107 @@ class Handler extends Thread{
         this.clientSocket = s;
         this.isRunning = isRunning;
         try {
-/*            this.dis = new DataInputStream(s.getInputStream());
-            this.dos = new DataOutputStream(s.getOutputStream());*/
-            this.br = new BufferedReader(new InputStreamReader(s.getInputStream(),"UTF-8"));
-            this.bw = new BufferedWriter(new PrintWriter(s.getOutputStream()));
-            this.ps = new PrintStream(new BufferedOutputStream(s.getOutputStream()));
-            this.ois = new ObjectInputStream(s.getInputStream());
-            this.oos = new ObjectOutputStream(s.getOutputStream());
+            this.is = s.getInputStream();
+            this.os = s.getOutputStream();
+//            this.br = new BufferedReader(new InputStreamReader(s.getInputStream(),"UTF-8"));
+//            this.bw = new BufferedWriter(new PrintWriter(s.getOutputStream()));
+//            this.ps = new PrintStream(new BufferedOutputStream(s.getOutputStream()));
+            this.ois = new ObjectInputStream(is);
+            this.oos = new ObjectOutputStream(os);
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
     /**
-     * 接收客户端的信息，DataInputStream对于处理数据更方便
-     * 把服务端的函数也分开弄
-     * 1. 2/19晚，暂时不涉及报文，直接用最基础的命令
-     *      1. 需要整一个发送函数
-     *      2. 客户端对服务端返回的信息也要用readUTF()读取
-     * 2.2/21，server首次对client的返回信息，头部会多三个乱码，太奇怪了；
+     * 随时接收客户端的消息
+     * 解析客户的请求，并对之做出响应
      */
-    private void recvRequest(){
+    private void handleRequest(){
         //收到的整个信息
         String reqMesg = null;
+        //是请求还是响应
+        String msgType = null;
         //解析到的命令（第一个指令，regist,login等等）
         String cmd = null;
+        //参数-最多包含，resourceName,deviceName,path,code,note 5个参数
+        String[] args = new String[5];
+        String[] datas= new String[2];
+
         //用于按照正则表达式分割信息
         String[] arr;
-        String[] args = new String[5];
-        /**
-         * regist       -- cmd + username + pwd + lanip + publicip
-         * login        -- cmd + username + pwd
-         * exit         -- cmd + nothing
-         * report       -- cmd + nothing 资源通过对象直接传入
-         * list         -- cmd + all/resourceName
-         * get          -- cmd + code(自己选择获取哪一个)
-         */
         try {
-            reqMesg = br.readLine();
+//            reqMesg = br.readLine();
+            byte[] recvBytes = new byte[4096];
+            int len = is.read(recvBytes);
+            reqMesg = new String(recvBytes,0,len);
             System.out.println("接收到的信息是: " + reqMesg);
-            //按照空格分割命令
-            arr = reqMesg.split("\\s+");
-            cmd = arr[0];
-            //如果这个命令附带的有参数
-            if(arr.length > 1){
-                for(int i = 0;i < arr.length - 1;i++){
-                    args[i] = arr[i+1];
+
+            //按行分割消息
+            arr = reqMesg.split("&");
+            msgType = arr[0];
+            //是请求
+            if("req".equals(msgType)){
+                cmd = arr[1];
+                String[] splitArgs = arr[2].split("\\s+");
+                for (int i = 0; i < splitArgs.length; i++) {
+                    args[i] = splitArgs[i];
                 }
+                String[] splitDatas = arr[3].split("\\s+");
+                for (int i = 0; i < splitDatas.length; i++) {
+                    datas[i] = splitDatas[i];
+                }
+            }else{
+                //是客户端的响应
+
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
+        /**
+         * regist       -- req & cmd & username + pwd & lanip + publicip
+         * login        -- req & cmd & username + pwd & nothing
+         * exit         -- req & cmd & nothing
+         * report       -- req & cmd & nothing 资源通过对象直接传入
+         * list         -- req & cmd & all/resourceName
+         * get          -- req & cmd & code(自己选择获取哪一个)
+         */
         switch (cmd){
             case "regist":
                 System.out.println("接收到客户端的注册请求");
-                if(regist(args[0],args[1],args[2],args[3],Integer.parseInt(args[4]))){
+                if(regist(args[0],args[1],datas[0],datas[1])){
                     System.out.println("注册成功");
-                    send(Constants.SUCCESS_CODE + " " + "REGIST_OK");
+                    send("resp&" + Constants.SUCCESS_CODE + "&" + cmd + "&" + "REGIST_OK");
                 }else{
                     System.out.println("注册失败");
-                    send(Constants.ERROR_CODE + " " + "REGIST_ERROR");
+                    send("resp&" + Constants.ERROR_CODE + "&" + cmd + "&" +"REGIST_ERROR");
                 }
                 break;
             case "login":
                 System.out.println("接收到客户端的登录请求");
                 if(login(args[0],args[1])){
                     System.out.println("应答登录成功");
-                    //把登录成功的用户名再返回去
-                    send(Constants.SUCCESS_CODE + " " + args[0] + " " + "LOGIN_OK");
+                    send("resp&" + Constants.SUCCESS_CODE + "&" + cmd + "&" + "LOGIN_OK");
                 }else{
                     System.out.println("登录失败");
-                    send(Constants.ERROR_CODE + " " + "LOGIN_ERROR");
+                    send("resp&" + Constants.ERROR_CODE + "&" + cmd + "&" + "LOGIN_ERROR");
                 }
                 break;
             case "report":
-                Resource resObj = recvResource();
-                System.out.println("添加资源" + DaoHelper.addResource(resObj));
+                Resource resObj = new Resource(args[0],args[1],args[2],1,args[3],args[4]);
+                if(DaoHelper.addResource(resObj)){
+                    System.out.println("添加资源成功");
+                    send("resp&" + Constants.SUCCESS_CODE + "&" + cmd + "&" + "REPORT_OK");
+                }
                 break;
             case "list":
                 String s = list(args[0]);
-                if(send(s)){
-                    System.out.println("返回资源列表成功");
+                //查询失败
+                if("500".equals(s)){
+                    send("resp&" + Constants.ERROR_CODE + "&" + cmd + "&" + "LIST_ERROR");
                 }else{
-                    System.out.println("返回资源列表失败");
+                    //查询成功
+                    send("resp&" + Constants.SUCCESS_CODE + "&" + cmd + "&" + s);
                 }
                 break;
             case "get":
@@ -177,6 +198,9 @@ class Handler extends Thread{
                     System.out.println("请求资源不可用");
                 }
                 break;
+            /*
+            exit的消息必须在关闭之前发送，否则就发不出去了！！
+             */
             case "exit":
                 if(clientExit()){
                     System.out.println("退出成功");
@@ -200,12 +224,11 @@ class Handler extends Thread{
             return false;
         }
         try {
-            bw.write(sendMsg);
+/*            bw.write(sendMsg);
             //相当于手动添加了换行符，让readline可以读取
             bw.newLine();
-            bw.flush();
-/*            ps.println(sendMsg);
-            ps.flush();*/
+            bw.flush();*/
+            os.write(sendMsg.getBytes(StandardCharsets.UTF_8));
             System.out.println("运行了一次send()函数，发送的消息是：" + sendMsg);
             System.out.println("发送的string长度是" + sendMsg.length());
             sendSuccess = true;
@@ -217,20 +240,12 @@ class Handler extends Thread{
     }
 
     /**
-     * 判断当前是否已登录，如未登录则权限受限，不允许report和list
-     * @return 当前是否已登录
-     */
-    public boolean isLogin(){
-        return clientName == null ? false : true;
-    }
-
-    /**
      * 执行注册，要修改数据库
-     * @return 返回数据库受影响的行数
+     * @return 注册是否成功
      */
-    public boolean regist(String username,String pwd,String lanip,String publicip,Integer port){
+    public boolean regist(String username,String pwd,String lanip,String publicip){
         boolean addSuccess = false;
-        User regUser = new User(username,pwd,0,lanip,publicip,port);
+        User regUser = new User(username,pwd,0,lanip,publicip);
         int resultForAddUser = DaoHelper.addUser(regUser);
         if(resultForAddUser == 1){
             addSuccess = true;
@@ -262,22 +277,6 @@ class Handler extends Thread{
     }
 
     /**
-     * 接收资源对象
-     * @return 资源实例
-     */
-    public Resource recvResource(){
-        Resource resObj = null;
-        try {
-            resObj = (Resource) ois.readObject();
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (ClassNotFoundException e) {
-            e.printStackTrace();
-        }
-        return resObj;
-    }
-
-    /**
      * 查询结果
      * @param arg -all查询所有东西 -文件名 查询该文件
      * @return 查询结果，不同条用&分隔开，可以用于直接返回给客户端
@@ -287,13 +286,13 @@ class Handler extends Thread{
         Resource[] resourceList = DaoHelper.getResourceList(arg);
         //如果没有查到，
         if(resourceList.length == 0){
-            return Constants.ERROR_CODE + " NO_RESOURCE_FOUND";
+            return Constants.ERROR_CODE;
         }
         StringBuilder sb = new StringBuilder();
         for (Resource r:resourceList) {
             sb.append(r.getResourceName() + " " + r.getDeviceName() + " " + r.getPath() + " " + r.getStatus() + " " + r.getCode() + " " + r.getNote());
             //分割不同的资源
-            sb.append("&");
+            sb.append("#");
         }
         //删掉最后一个&
         sb.deleteCharAt(sb.length()-1);
@@ -315,7 +314,9 @@ class Handler extends Thread{
             send(Constants.ERROR_CODE + " RESOURCE_OUTLINE");
             System.out.println("客户端请求的这个资源不在线，没法用");
         }else{
-            send(Constants.SUCCESS_CODE + " SERVER_RECEIVED");
+            User resourceHolder = DaoHelper.getUserByName(resourceFound.getDeviceName());
+            //成功码 + path + publicIP + lanIP + port
+            send(Constants.SUCCESS_CODE + " " + resourceFound.getPath() + " " + resourceHolder.getPublicIp() + " " + resourceHolder.getLanIp());
             available = true;
         }
         return available;
@@ -331,19 +332,20 @@ class Handler extends Thread{
      */
     public boolean clientExit(){
         boolean retMsgSuccess = false;
-        if(send(Constants.SUCCESS_CODE + " " + "EXIT_OK")){
+        if(send("resp&" + Constants.SUCCESS_CODE + "&" + "exit&" + "EXIT_OK")){
             if(DaoHelper.changeUserStatus(this.clientName,0) == 1){
                 int resourceStatusChanged = DaoHelper.changeResourceStatus(this.clientName,0);
                 //返回exitOK成功后才能把状态结束
-                this.isRunning = false;
                 retMsgSuccess = true;
                 clientName = null;
+                this.isRunning = false;
             }else{
                 System.out.println("下线用户时出现意外——请检查数据库");
             }
         }else{
-            System.out.println("返回exit消息失败");
+            System.out.println("给客户端发送EXITOK失败");
         }
+
         return retMsgSuccess;
     }
     /**
@@ -362,10 +364,36 @@ class Handler extends Thread{
     @Override
     public void run() {
         while (isRunning){
-//            parseRequest();
-            recvRequest();
+            handleRequest();
         }
         closeSocket();
     }
 }
 
+//问题的关键就是，让客户端可以随时接收到服务端的消息，而不是想接收再接收
+class Detection extends Thread{
+    /**
+     * br       --用于接收信息
+     * ois      --用于接收对象
+     */
+    private BufferedReader br;
+    private ObjectInputStream ois;
+    public boolean needDetection;
+
+    public Detection(Socket s,boolean b){
+        try {
+            this.br = new BufferedReader(new InputStreamReader(s.getInputStream(),"UTF-8"));
+            this.ois = new ObjectInputStream(s.getInputStream());
+            this.needDetection = b;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void run() {
+        while(needDetection){
+            needDetection = false;
+        }
+    }
+}

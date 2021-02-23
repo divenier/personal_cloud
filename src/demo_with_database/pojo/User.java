@@ -18,24 +18,14 @@ public class User {
     private Integer status;
     private String lanIp;
     private String publicIp;
-    private Integer port;
-    public User(String userName, String userPassword, Integer status, String lanIp, String publicIp,Integer port) {
+    public User(String userName, String userPassword, Integer status, String lanIp, String publicIp) {
         this.userName = userName;
         this.userPassword = userPassword;
         this.status = status;
         this.lanIp = lanIp;
         this.publicIp = publicIp;
-        this.port = port;
     }
     public User(){}
-
-    public Integer getPort() {
-        return port;
-    }
-
-    public void setPort(Integer port) {
-        this.port = port;
-    }
 
     public String getUserName() {
         return userName;

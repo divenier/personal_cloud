@@ -33,9 +33,9 @@ public class DaoHelper {
             //开始插入数据库
             PreparedStatement pstm = null;
             if(null != connection){
-                String sql = "insert into user(username, password, status, lanip, publicip, port) VALUES (?,?,?,?,?,?)";
+                String sql = "insert into user(username, password, status, lanip, publicip) VALUES (?,?,?,?,?)";
                 //初始注册未登录，状态为不可用
-                Object[] params = {user.getUserName(),user.getUserPassword(),0,user.getLanIp(),user.getPublicIp(),user.getPort()};
+                Object[] params = {user.getUserName(),user.getUserPassword(),0,user.getLanIp(),user.getPublicIp()};
                 updateRows = JdbcUtils.execute(connection, pstm, sql, params);
                 connection.commit();
                 //因为catch中还要回滚，所以connection暂时不关闭，在finally中关闭

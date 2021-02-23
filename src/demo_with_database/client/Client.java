@@ -1,9 +1,9 @@
 package demo_with_database.client;
 import demo_with_database.pojo.Resource;
 import org.apache.commons.codec.digest.DigestUtils;
-//import org.springframework.util.DigestUtils;
 import java.io.*;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.util.Scanner;
 
 /**
@@ -12,44 +12,18 @@ import java.util.Scanner;
  * 客户端
  */
 public class Client {
-    /**
-     * bufferedWriter第一次使用总是有乱码
-     */
-    private static Socket client;
-    private static InputStream is;
-    private static OutputStream os;
-    private static PrintStream ps;
-    private static BufferedWriter bw;
-    private static BufferedReader br;
-    private static ObjectOutputStream oos;
-    private static Scanner scanner;
-    //存储本客户端的用户名
-    private static String clientUserName;
-    //本客户端的端口号
-    private static Integer portNum;
-
-    public Client(Socket clientSocket) throws IOException {
-        client = clientSocket;
-        is = clientSocket.getInputStream();
-        os = clientSocket.getOutputStream();
-        br = new BufferedReader(new InputStreamReader(is,"UTF-8"));
-        bw = new BufferedWriter(new PrintWriter(os));
-        ps = new PrintStream(new BufferedOutputStream(os));
-        oos = new ObjectOutputStream(clientSocket.getOutputStream());
-        portNum = clientSocket.getPort();
-    }
-
     public static void main(String[] args) throws IOException {
         System.out.println("------客户端开始运行--------");
         int port = 6666;
         Socket socket = new Socket(InetAddress.getByName("localhost"), port);
-        //给类变量赋值
-        new Client(socket);
+        //让CHandler处理一切事务
+        CHanlder clientHanlder = new CHanlder(socket,true);
+        clientHanlder.start();
 
         // 用于存储用户的输入命令
         String label = "";
         // 获取一个扫描器，用完需关闭
-        scanner = new Scanner(System.in);
+        Scanner scanner = new Scanner(System.in);
         // 定义一个布尔变量，用于退出程序
         boolean loop = true;
         while (loop) {
@@ -61,54 +35,38 @@ public class Client {
             System.out.println("exit: 申请下线");
 
             label = scanner.next();
-//            label = scanner.nextLine();
             switch (label) {
                 case "regist":
-                    String regResult = regist();
-                    handleStatus("注册",regResult);
+                    String regResult = clientHanlder.regist();
                     break;
                 case "login":
-                    String loginResult = login();
-                    handleStatus("登录",loginResult);
-                    //如登录失败，本client就不能记录该用户名
-                    if(!loginResult.contains("200")){
-                        clientUserName = null;
-                    }
+                    String loginResult = clientHanlder.login();
                     break;
                 case "report":
-                    if(!isLogin()){
+                    if(!clientHanlder.isLogin()){
                         System.out.println("请先登录再进行操作");
                         break;
                     }
-                    Resource resource = readResourceMsg();
-                    boolean reportSuccess = reportResource(resource);
-                    if(reportSuccess){
-                        System.out.println("资源声明成功");
-                    }
+                    clientHanlder.reportResource();
                     break;
                 case "list":
-                    if(!isLogin()){
+                    if(!clientHanlder.isLogin()){
                         System.out.println("请先登录再进行操作");
                         break;
                     }
-                    String cmdMsg = readListCmd();
-                    String[] reourceList = list(cmdMsg);
-                    //如果没有查到，就直接输出错误码，没毛病
-                    for(String s: reourceList){
-                        System.out.println(s);
-                    }
+                    clientHanlder.list();
                     break;
-                case "get":
-                    if(!isLogin()){
-                        System.out.println("请先登录再进行操作");
-                        break;
-                    }
-                    String cmdForGet = readGetCmd();
-                    String retForGet = getResource(cmdForGet);
-                    System.out.println(retForGet);
-                    break;
+//                case "get":
+//                    if(!isLogin()){
+//                        System.out.println("请先登录再进行操作");
+//                        break;
+//                    }
+//                    String cmdForGet = readGetCmd();
+//                    String retForGet = getResource(cmdForGet);
+//                    System.out.println(retForGet);
+//                    break;
                 case "exit":
-                    boolean exitSuccess = exit();
+                    boolean exitSuccess = clientHanlder.exit();
                     if(exitSuccess){
                         System.out.println("服务端接收到退出请求");
                         //让自己这边结束运行
@@ -130,165 +88,6 @@ public class Client {
     }
 
     /**
-     * 客户端的发送信息的方法，几乎与server的send函数一样
-     * @param sendMsg
-     * @return 发送是否成功
-     */
-    public static boolean sendMsg(String sendMsg){
-        boolean sendSuccess = false;
-        if(sendMsg == null || "".equals(sendMsg)){
-            System.out.println("发送的消息为空");
-            return true;
-        }else {
-            try {
-/*                dos.writeUTF(sendMsg);
-                dos.flush();*/
-                bw.write(sendMsg);
-                //换行，否则server的 readline就会一直阻塞
-                bw.newLine();
-                bw.flush();
-/*                ps.println(sendMsg);
-                ps.flush();*/
-                System.out.println("运行了一次send()函数，发送的消息是：" + sendMsg);
-                sendSuccess = true;
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-        return sendSuccess;
-    }
-
-
-    /**
-     * 把读取/接收回复的实现放到一个函数中
-     * @return 接收到的String
-     */
-    public static String recvMsg() {
-        String receivedMsg = null;
-        try {
-            receivedMsg = br.readLine();
-        } catch (IOException e) {
-            System.out.println("接收服务端的信息出现异常");
-            e.printStackTrace();
-        }
-        if(receivedMsg == null || "".equals(receivedMsg)){
-            System.out.println("recvMsg收到了个寂寞");
-            return null;
-        }
-        //\\s+表示匹配任意>1个空格
-        System.out.println(receivedMsg);
-//        String[] msgArr = receivedMsg.split("\\s+");
-//        return msgArr;
-        return receivedMsg;
-    }
-
-    public static boolean isLogin(){
-        return clientUserName == null ? false : true;
-    }
-    /**
-     * 对不同指令收到的回复状态码进行处理和回显
-     * @param cmd 客户端发出的指令 注册，登录等
-     * @param status 服务端回复的状态码（经过recvMsg及对应的各个功能函数和main函数处理后的string）
-     */
-    public static void handleStatus(String cmd,String status){
-        if(status.contains("200")){
-            System.out.println(cmd + "成功");
-        }else if(status.contains("500")){
-            System.out.println(cmd + "出现错误");
-        }else{
-            System.out.println(cmd + "出现未知状况");
-        }
-    }
-    /**
-     * 注册（由于port是读取到的，因此仅能注册自己的连接）
-     * 上报信息包含：
-     * username 用户名
-     * password 密码
-     * lanip
-     * publicip
-     * port 是本客户端的socket端口号
-     * @return 注册的结果
-     */
-    public static String regist(){
-        String regStatus = null;
-        String lanip = IPAddressHelper.getLocalIp();
-        String publicip = IPAddressHelper.getPublicIP();
-        String portString = portNum.toString();
-        //注册指令+输入信息
-        String regMsg = "regist " + readUserMsg() + " " + lanip + " " + publicip + " " + portString;
-        if(sendMsg(regMsg)){
-            String[] retForReg = recvMsg().split("\\s+");
-            regStatus = retForReg[0];
-        }else{
-            System.out.println("发送注册指令失败");
-        }
-        return regStatus;
-    }
-
-    /**
-     * 用一个新的scanner读取注册时输入的信息
-     * @return 用户名+密码（用于注册）
-     */
-    public static String readUserMsg() {
-        Scanner scanner = new Scanner(System.in);
-        System.out.println("请输入用户名: ");
-        String user = scanner.next();
-        System.out.println("请输入密码: ");
-        String passwd = scanner.next();
-
-        String msg = user + " " + passwd;
-        return msg;
-    }
-
-    /**
-     * 登录，
-     */
-    public static String login(){
-        String loginStatus = null;
-        //login username pwd
-        String name_pwd = readUserMsg();
-
-        //先把读取到的用户名赋给类变量clientUserName，如果注册失败再设为null
-        String[] arr = name_pwd.split("\\s+");
-        clientUserName = arr[0];
-
-        String loginMsg = "login " + name_pwd;
-        if(sendMsg(loginMsg)){
-            String[] retForLogin = recvMsg().split("\\s+");;
-            loginStatus = retForLogin[0];
-        }else{
-            System.out.println("发送登录指令失败");
-        }
-        return loginStatus;
-    }
-
-    /**
-     * list命令时，提醒用户输入并读取用户输入命令
-     * @return list + arg(all/otherFileName)
-     */
-    public static String readListCmd(){
-        System.out.println("list all: 查看所有资源");
-        System.out.println("list 文件名: 查看所有这个文件的状态");
-
-        Scanner scanner = new Scanner(System.in);
-        String cmdMsg = scanner.nextLine();
-        return cmdMsg;
-    }
-
-    /**
-     * 返回查看的结果
-     * @param listCmd
-     * @return 一个长String，包含所有查询到的结果，查询结果用&分割
-     */
-    public static String[] list(String listCmd){
-        String[] retForList = null;
-        if(sendMsg(listCmd)){
-            retForList = recvMsg().split("&");
-        }
-        return retForList;
-    }
-
-    /**
      * 提示用户输入要获取的文件的参数，并读取参数
      * @return get + code
      */
@@ -307,68 +106,278 @@ public class Client {
      * 3. 两个客户端进行传输
      * @return 传输结果+存储位置
      */
-    public static String getResource(String cmdAndCode){
-        //发送命令成功
-        if(sendMsg(cmdAndCode)){
-            String[] retForGet = recvMsg().split("\\s+");
-            //如果没有成功状态码
-            if(!retForGet[0].contains("200")){
-                System.out.println("get请求失败");
-                return "FAILED";
-            }else{
-                //与其他客户端建立连接，传输文件
-/*                Socket otherClient = getResFromOtherClinet();
-                OtherClient oc = new OtherClient(otherClient);
-                String msg = oc.createScan();
-                oc.requestRes(msg);
-                //将资源保存在本地
-                oc.saveRes();
+//    public static String getResource(String cmdAndCode){
+//        //发送命令成功
+//        if(sendReq(cmdAndCode)){
+//            String[] retForGet = recvMsg().split("\\s+");
+//            //如果没有成功状态码
+//            if(!retForGet[0].contains("200")){
+//                System.out.println("get请求失败");
+//                return "FAILED";
+//            }else{
+//                //与其他客户端建立连接，传输文件
+//                //资源在客户端A上的绝对路径
+//                String resourcePath = retForGet[1];
+//                //客户端A的publicIP
+//                String RCPubIP = retForGet[2];
+//                //lanip
+//                String RCLanIP = retForGet[3];
+//                //端口号
+//                Integer RCPort = Integer.parseInt(retForGet[4]);
+//
+////                Socket resClientSocket = getResHolderSocket(RCPort);
+//
+//            }
+//        }
+//        return null;
+//    }
 
-                //同时，再向服务器申明该资源
-                String[] data = msg.split("&");
-                String name = data[1];
-                String code = data[2];
-                declToServerAgain(name, code);*/
-            }
-        }
-        return null;
-    }
     /**
-     * 给服务端发送断开连接指令
+     * 与拥有资源的客户端建立连接
+     * 目前只做 本地连接
+     * @return
      */
-    public static boolean exit(){
-        //服务端收到你要断开的指令
-        boolean getExitOk = false;
-        if(sendMsg("exit")){
-            String[] retForExit = recvMsg().split("\\s+");;
-            if(retForExit[0].contains("200")){
-                getExitOk = true;
-            }
-        }else{
-            System.out.println("发送exit指令失败");
-        }
-        return getExitOk;
-    }
-    /**
-     * 向服务端汇报自己拥有的资源
-     * 资源对象是pojo的Resource类实例
-     * @param r 资源实例
-     * @return 写入对象是否成功
-     */
-    public static boolean reportResource(Resource r){
-        boolean reportSuccess = false;
+    public static Socket getResHolderSocket(Integer resHolderPort){
+        Socket socket = null;
         try {
-            if(sendMsg("report")){
-                oos.writeObject(r);
-                oos.flush();
-                reportSuccess = true;
+            socket = new Socket("localhost", resHolderPort);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return socket;
+    }
+
+}
+
+/**
+ * 用于客户端的输入输出，以及处理各种信息
+ *
+ */
+class CHanlder extends Thread{
+    /**
+     * waitForExit是防止在退出时，服务器已关闭连接，但客户端仍试图读取socket的消息
+     */
+    public Boolean isRunning;
+//    public Boolean waitForExit;
+    public Socket client;
+    public InputStream is;
+    public OutputStream os;
+//    public PrintStream ps;
+//    public BufferedWriter bw;
+//    public BufferedReader br;
+    public ObjectOutputStream oos;
+    public Scanner scanner;
+    //存储本客户端的用户名
+    public String clientUserName;
+
+    public CHanlder(Socket clientSocket,boolean b) throws IOException {
+        this.client = clientSocket;
+        this.is = clientSocket.getInputStream();
+        this.os = clientSocket.getOutputStream();
+//        this.br = new BufferedReader(new InputStreamReader(is,"UTF-8"));
+//        this.bw = new BufferedWriter(new PrintWriter(os));
+//        this.ps = new PrintStream(new BufferedOutputStream(os));
+        this.oos = new ObjectOutputStream(clientSocket.getOutputStream());
+        //登录之后修改为用户名
+        this.clientUserName = "NOT_INIT";
+        this.isRunning = b;
+//        this.waitForExit = false;
+    }
+
+    public void closeSocket(){
+        if(this.client != null){
+            try {
+                this.client.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * 客户端的发送请求的方法
+     * @param msg 要发送的信息
+     * @return 发送是否成功
+     */
+    public boolean sendReq(String msg){
+        boolean sendSuccess = false;
+        if(msg == null || "".equals(msg)){
+            System.out.println("发送的消息为空");
+            return true;
+        }else {
+            try {
+                os.write(msg.getBytes(StandardCharsets.UTF_8));
+                System.out.println("运行了一次send()函数，发送的消息是：" + msg);
+                sendSuccess = true;
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return sendSuccess;
+    }
+
+    /**
+     * 读取服务端发来的消息
+     * 并对之进行处理
+     */
+    public String recvMsg() {
+        //收到的整个信息
+        String recvMesg = null;
+        //是请求还是响应
+        String msgType = null;
+        //解析到的命令（要么是自己发出的命令，要么是服务端的命令）
+        String cmd = null;
+        //响应时才有的响应码，如果接收到的不是响应，就初始化为NOT_INIT
+        String status = "NOT_INIT";
+        //参数，请求时才会有
+        String[] args = new String[2];
+        //最多不超过10个资源
+        String[] datas= new String[10];
+        int dataLength = 0;
+        //用于按照正则表达式分割信息
+        String[] arr;
+        try {
+            byte[] recvBytes = new byte[4096];
+            //如果socket已经关闭，防止socket关闭但客户端状态还未更新，因此每次执行前先判断一下
+            if(client != null){
+                int len = is.read(recvBytes);
+                recvMesg = new String(recvBytes,0,len);
+            }
+//            System.out.println("很抱歉服务端关闭了");
+//            isRunning = false;
+//            return null;
+            System.out.println("接收到的信息是: " + recvMesg);
+
+            //按行分割消息
+            arr = recvMesg.split("&");
+            if(arr.length > 0){
+                msgType = arr[0];
+            }
+            //是响应
+            if(msgType.contains("resp")){
+                status = arr[1];
+                cmd = arr[2];
+                //不同的资源之间用#分割
+                String[] splitDatas = arr[3].split("#");
+                dataLength = splitDatas.length;
+                for (int i = 0; i < dataLength; i++) {
+                    datas[i] = splitDatas[i];
+                }
             }else{
-                System.out.println("发送report指令失败");
+                //是服务端的请求，包含get file和心跳检测
+                //TODO
+
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return reportSuccess;
+        //如果接收出错了，就直接不处理了
+        if(recvMesg == null||msgType == null){
+            return null;
+        }
+        //对响应进行处理
+        if(msgType.contains("resp")){
+            handleStatus(cmd,status);
+            switch (cmd){
+                case "login":
+                    //如果登录失败，就把本线程的用户名设为未初始化，标识未登录
+                    if(!("200".equals(status))) {
+                        clientUserName = "NOT_INIT";
+                    }
+                    break;
+                case "exit":
+                    if("200".equals(status)){
+                        this.isRunning = false;
+                        clientUserName = "NOT_INIT";
+                        closeSocket();
+                    }
+                    break;
+                case "list":
+                    //得到服务端成功回复，分行输出资源信息
+                    if("200".equals(status)){
+                        for (int i = 0; i < dataLength; i++) {
+                            System.out.println(datas[i]);
+                        }
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+        else{
+            //处理服务器的要求
+            //TODO
+
+        }
+        return null;
+    }
+
+    /**
+     * 注册
+     * 上报信息包含：
+     * username 用户名
+     * password 密码
+     * lanip
+     * publicip
+     * @return 注册的结果
+     */
+    public String regist(){
+        String regStatus = null;
+        String lanip = IPAddressHelper.getLocalIp();
+        String publicip = IPAddressHelper.getPublicIP();
+        //req+注册指令+输入信息+IP
+        String regMsg = "req&" + "regist&" + readUserMsg() + "&" + lanip + " " + publicip;
+        if(sendReq(regMsg)){
+            System.out.println("发送注册指令成功");
+            regStatus = "我也不知道写啥了";
+        }else{
+            System.out.println("发送注册指令失败");
+        }
+        return regStatus;
+    }
+    /**
+     * 用一个新的scanner读取注册时输入的信息
+     * @return 用户名+密码（用于注册）
+     */
+    public String readUserMsg() {
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("请输入用户名: ");
+        String user = scanner.next();
+        System.out.println("请输入密码: ");
+        String passwd = scanner.next();
+
+        String msg = user + " " + passwd;
+        return msg;
+    }
+
+    /**
+     * 登录，
+     */
+    public String login(){
+        String loginStatus = null;
+        //username pwd
+        String name_pwd = readUserMsg();
+
+        //先把读取到的用户名赋给类变量clientUserName，如果注册失败再设为null
+        String[] arr = name_pwd.split("\\s+");
+        clientUserName = arr[0];
+
+        String loginMsg = "req&" + "login&" + name_pwd + "&" + "LOGIN_DATA";
+        if(sendReq(loginMsg)){
+            loginStatus = "已发送登录命令";
+        }else{
+            System.out.println("发送登录指令失败");
+        }
+
+        return loginStatus;
+    }
+
+    /**
+     * 通过本线程的clientUserName有无被赋值判断当前是否在登录状态
+     * @return 当前是否在登录状态
+     */
+    public boolean isLogin(){
+        return "NOT_INIT".equals(clientUserName) ? false : true;
     }
 
     /**
@@ -379,7 +388,7 @@ public class Client {
      * status           --默认是1（自己添加自己的，自己当然在线了）
      * @return Resource实例
      */
-    public static Resource readResourceMsg() {
+    public Resource readResourceMsg() {
         Scanner scanner = new Scanner(System.in);
         System.out.println("请输入资源名: ");
         String resourceName = scanner.next();
@@ -395,5 +404,89 @@ public class Client {
 
         Resource resource = new Resource(resourceName,deviceName,path,1,code,note);
         return resource;
+    }
+
+    /**
+     * 向服务端汇报自己拥有的资源
+     * 资源对象是pojo的Resource类实例
+     * @return 写入对象是否成功
+     */
+    public boolean reportResource(){
+        boolean reportSuccess = false;
+        Resource r = readResourceMsg();
+        String resMsg = r.getResourceName() + " " + r.getDeviceName() + " " + r.getPath() + " " + r.getCode() + " " + r.getNote();
+        String sendMsg = "req&" + "report&" + resMsg + "&" + "REPORT_DATA";
+        if(sendReq(sendMsg)){
+            reportSuccess = true;
+        }else{
+            System.out.println("发送report指令失败");
+        }
+        return reportSuccess;
+    }
+
+
+    /**
+     * 返回查看的结果
+     * @return 一个长String，包含所有查询到的结果，查询结果用&分割
+     */
+    public String[] list(){
+        String arg = readListCmd();
+        String listMsg = "req&" + "list&" + arg + "&" + "LIST_DATA";
+//        String[] retForList = null;
+        if(sendReq(listMsg)){
+            System.out.println("发送list命令成功");
+        }
+        return null;
+    }
+
+    /**
+     * list命令时，提醒用户输入并读取用户输入命令
+     * @return list + arg(all/otherFileName)
+     */
+    public String readListCmd(){
+        System.out.println("all: 查看所有资源");
+        System.out.println("文件名: 查看所有这个文件的状态");
+
+        Scanner scanner = new Scanner(System.in);
+        String arg = scanner.nextLine();
+        return arg;
+    }
+
+    /**
+     * 给服务端发送断开连接指令
+     * 发送就行了，接收处理交给recvMsg
+     * TODO 修改协议
+     */
+    public boolean exit(){
+        //服务端收到你要断开的指令
+        boolean getExitOk = false;
+        if(sendReq("req&" + "exit&" + "NO_ARGS&" + "EXIT_DATA")){
+            getExitOk = true;
+        }else{
+            System.out.println("发送exit指令失败");
+        }
+//        waitForExit = true;
+        return getExitOk;
+    }
+    /**
+     * 对不同指令收到的回复状态码进行处理和回显
+     * @param cmd 客户端发出的指令 注册，登录等
+     * @param status 服务端回复的状态码（经过recvMsg及对应的各个功能函数和main函数处理后的string）
+     */
+    public static void handleStatus(String cmd,String status){
+        if(status.contains("200")){
+            System.out.println(cmd + "成功");
+        }else if(status.contains("500")){
+            System.out.println(cmd + "出现错误");
+        }else{
+            System.out.println(cmd + "出现未知状况");
+        }
+    }
+
+    @Override
+    public void run() {
+        while(isRunning){
+            recvMsg();
+        }
     }
 }
