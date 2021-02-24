@@ -8,6 +8,7 @@ import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 
 /**
  * @author divenier
@@ -15,6 +16,12 @@ import java.nio.charset.StandardCharsets;
  * 服务端的主程序
  */
 public class Server {
+
+    /**
+     * 用一个静态Map表，存储userName和socket的映射，向对应socket发送消息
+     */
+//    public static HashMap<String,Socket> username2Socket = new HashMap<>();
+    public static HashMap<String,OutputStream> username2os = new HashMap<>();
 
     public static void main(String[] args) throws IOException {
         System.out.println("---------服务端运行--------");
@@ -77,8 +84,8 @@ class Handler extends Thread{
 //    private BufferedReader br;
 //    private BufferedWriter bw;
 //    private PrintStream ps;
-    private ObjectInputStream ois;
-    private ObjectOutputStream oos;
+//    private ObjectInputStream ois;
+//    private ObjectOutputStream oos;
     public Boolean isRunning;
 
     //存储客户端socket的登录用户名
@@ -87,14 +94,15 @@ class Handler extends Thread{
     public Handler(Socket s,Boolean isRunning){
         this.clientSocket = s;
         this.isRunning = isRunning;
+        this.clientName = "NOT_INIT";
         try {
             this.is = s.getInputStream();
             this.os = s.getOutputStream();
 //            this.br = new BufferedReader(new InputStreamReader(s.getInputStream(),"UTF-8"));
 //            this.bw = new BufferedWriter(new PrintWriter(s.getOutputStream()));
 //            this.ps = new PrintStream(new BufferedOutputStream(s.getOutputStream()));
-            this.ois = new ObjectInputStream(is);
-            this.oos = new ObjectOutputStream(os);
+//            this.ois = new ObjectInputStream(is);
+//            this.oos = new ObjectOutputStream(os);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -103,6 +111,7 @@ class Handler extends Thread{
     /**
      * 随时接收客户端的消息
      * 解析客户的请求，并对之做出响应
+     * 不只是响应请求，也解析回复
      */
     private void handleRequest(){
         //收到的整个信息
@@ -114,7 +123,7 @@ class Handler extends Thread{
         //参数-最多包含，resourceName,deviceName,path,code,note 5个参数
         String[] args = new String[5];
         String[] datas= new String[2];
-
+        String status = null;
         //用于按照正则表达式分割信息
         String[] arr;
         try {
@@ -138,80 +147,119 @@ class Handler extends Thread{
                 for (int i = 0; i < splitDatas.length; i++) {
                     datas[i] = splitDatas[i];
                 }
-            }else{
+                /**
+                 * regist       -- req & cmd & username + pwd & lanip + publicip
+                 * login        -- req & cmd & username + pwd & nothing
+                 * exit         -- req & cmd & nothing
+                 * report       -- req & cmd & nothing 资源通过对象直接传入
+                 * list         -- req & cmd & all/resourceName
+                 * get          -- req & cmd & code(自己选择获取哪一个)
+                 */
+                switch (cmd){
+                    case "regist":
+                        System.out.println("接收到客户端的注册请求");
+                        if(regist(args[0],args[1],datas[0],datas[1])){
+                            System.out.println("注册成功");
+                            send("resp&" + Constants.SUCCESS_CODE + "&" + cmd + "&" + "REGIST_OK");
+                        }else{
+                            System.out.println("注册失败");
+                            send("resp&" + Constants.ERROR_CODE + "&" + cmd + "&" +"REGIST_ERROR");
+                        }
+                        break;
+                    case "login":
+                        System.out.println("接收到客户端的登录请求");
+                        if(login(args[0],args[1])){
+                            System.out.println("应答登录成功");
+                            send("resp&" + Constants.SUCCESS_CODE + "&" + cmd + "&" + "LOGIN_OK");
+                        }else{
+                            System.out.println("登录失败");
+                            send("resp&" + Constants.ERROR_CODE + "&" + cmd + "&" + "LOGIN_ERROR");
+                        }
+                        break;
+                    case "report":
+                        Resource resObj = new Resource(args[0],args[1],args[2],1,args[3],args[4]);
+                        if(DaoHelper.addResource(resObj)){
+                            System.out.println("添加资源成功");
+                            send("resp&" + Constants.SUCCESS_CODE + "&" + cmd + "&" + "REPORT_OK");
+                        }
+                        break;
+                    case "list":
+                        String s = list(args[0]);
+                        //查询失败
+                        if("500".equals(s)){
+                            send("resp&" + Constants.ERROR_CODE + "&" + cmd + "&" + "LIST_ERROR");
+                        }else{
+                            //查询成功
+                            send("resp&" + Constants.SUCCESS_CODE + "&" + cmd + "&" + s);
+                        }
+                        break;
+                    case "get":
+                        String sss = getResourceFromClient(args[0]);
+                        if("SEND_GET_OK".equals(sss)){
+                            System.out.println("服务端已向资源拥有方发送get请求");
+                        }
+                        break;
+                    /*
+                    exit的消息必须在关闭之前发送，否则就发不出去了！！
+                     */
+                    case "exit":
+                        if(clientExit()){
+                            System.out.println("退出成功");
+                        }
+                        break;
+                    default:
+                        System.out.println("客户端命令错误，请让它重新输入");
+                        break;
+                }
+            }else if("resp".equals(msgType)){
                 //是客户端的响应
-
+                status = arr[1];
+                //客户端响应的文件名+文件长度
+                String[] splitDatas = arr[3].split("\\s+");
+                for (int i = 0; i < splitDatas.length; i++) {
+                    datas[i] = splitDatas[i];
+                }
+                switch (cmd){
+                    //准备接收文件
+                    case "get":
+                        Integer fileLength = Integer.parseInt(datas[1]);
+                        File file = recvFile(datas[0],fileLength);
+                        System.out.println(file.getName());
+                        break;
+                    //心跳检测的回复报文
+                    case "isAlive":
+                        break;
+                    default:
+                        break;
+                }
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
-        /**
-         * regist       -- req & cmd & username + pwd & lanip + publicip
-         * login        -- req & cmd & username + pwd & nothing
-         * exit         -- req & cmd & nothing
-         * report       -- req & cmd & nothing 资源通过对象直接传入
-         * list         -- req & cmd & all/resourceName
-         * get          -- req & cmd & code(自己选择获取哪一个)
-         */
-        switch (cmd){
-            case "regist":
-                System.out.println("接收到客户端的注册请求");
-                if(regist(args[0],args[1],datas[0],datas[1])){
-                    System.out.println("注册成功");
-                    send("resp&" + Constants.SUCCESS_CODE + "&" + cmd + "&" + "REGIST_OK");
-                }else{
-                    System.out.println("注册失败");
-                    send("resp&" + Constants.ERROR_CODE + "&" + cmd + "&" +"REGIST_ERROR");
-                }
-                break;
-            case "login":
-                System.out.println("接收到客户端的登录请求");
-                if(login(args[0],args[1])){
-                    System.out.println("应答登录成功");
-                    send("resp&" + Constants.SUCCESS_CODE + "&" + cmd + "&" + "LOGIN_OK");
-                }else{
-                    System.out.println("登录失败");
-                    send("resp&" + Constants.ERROR_CODE + "&" + cmd + "&" + "LOGIN_ERROR");
-                }
-                break;
-            case "report":
-                Resource resObj = new Resource(args[0],args[1],args[2],1,args[3],args[4]);
-                if(DaoHelper.addResource(resObj)){
-                    System.out.println("添加资源成功");
-                    send("resp&" + Constants.SUCCESS_CODE + "&" + cmd + "&" + "REPORT_OK");
-                }
-                break;
-            case "list":
-                String s = list(args[0]);
-                //查询失败
-                if("500".equals(s)){
-                    send("resp&" + Constants.ERROR_CODE + "&" + cmd + "&" + "LIST_ERROR");
-                }else{
-                    //查询成功
-                    send("resp&" + Constants.SUCCESS_CODE + "&" + cmd + "&" + s);
-                }
-                break;
-            case "get":
-                if(getResourceStatus(args[0])){
-                    System.out.println("请求资源可用");
-                }else{
-                    System.out.println("请求资源不可用");
-                }
-                break;
-            /*
-            exit的消息必须在关闭之前发送，否则就发不出去了！！
-             */
-            case "exit":
-                if(clientExit()){
-                    System.out.println("退出成功");
-                }
-                break;
-            default:
-                System.out.println("客户端命令错误，请让它重新输入");
-                break;
-        }
+
     }
 
+    /**
+     * 给另一个给定的socket客户端发送消息，用于请求文件
+     * 问题：这个IO流用完之后，socket会不会直接关闭？？
+     * --如果真的关了。。。
+     *          在server中维护一个IO流，直接写入IO流
+     * @param
+     * @param msg 服务端的req报文
+     * @return 请求结果
+     */
+    public String ftpRequest(OutputStream os,String msg){
+        String reqResult = null;
+            //用完要不要关闭？？
+        try {
+            os.write(msg.getBytes(StandardCharsets.UTF_8));
+            reqResult = "SERVER_REQ_SEND_OK";
+            System.out.println("向资源拥有者发送了消息");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return reqResult;
+    }
     /**
      * 给客户端发送消息
      * @param sendMsg
@@ -272,6 +320,13 @@ class Handler extends Thread{
             DaoHelper.changeResourceStatus(user.getUserName(),1);
             //handler保存该socket连接的用户名
             this.clientName = username;
+            //把用户名和socket放到map中
+//            Server.username2Socket.put(username,clientSocket);
+            try {
+                Server.username2os.put(username,clientSocket.getOutputStream());
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
         return loginSuccess;
     }
@@ -303,23 +358,60 @@ class Handler extends Thread{
      * 判断用户请求的资源是否可用
      * @return
      */
-    public boolean getResourceStatus(String code){
+//    public boolean getResourceStatus(String code){
+//
+//        return resourceFound.getStatus() == 1 ? true :false;
+//    }
+
+    //问题：如何在接收到客户A要文件的请求时，把req resource请求发给客户B？
+    public String getResourceFromClient(String code){
         /**
          * 1. 从数据库中查询文件绝对路径和对应状态
          * 2. if(status != 1) 不可用，重新输入命令
          */
-        boolean available = false;
+        String sendGet = null;
         Resource resourceFound = DaoHelper.getResourceByCode(code);
-        if(resourceFound.getStatus() != 1){
-            send(Constants.ERROR_CODE + " RESOURCE_OUTLINE");
-            System.out.println("客户端请求的这个资源不在线，没法用");
+        if(resourceFound.getStatus() == 1){
+            //得到拥有资源的客户端的当前连接
+//            Socket resSocket = Server.username2Socket.get(resourceFound.getDeviceName());
+            OutputStream os = Server.username2os.get(resourceFound.getDeviceName());
+            //服务端向拥有资源的客户端B发送请求报文
+            String msg = "req&" + "get&" + resourceFound.getPath() + "&" + resourceFound.getResourceName();
+            ftpRequest(os,msg);
+            sendGet = "SEND_GET_OK";
         }else{
-            User resourceHolder = DaoHelper.getUserByName(resourceFound.getDeviceName());
-            //成功码 + path + publicIP + lanIP + port
-            send(Constants.SUCCESS_CODE + " " + resourceFound.getPath() + " " + resourceHolder.getPublicIp() + " " + resourceHolder.getLanIp());
-            available = true;
+            //给客户端返回，请求错误
+            send("resp&" + Constants.ERROR_CODE + "&" + "get&" + "RESOURSE_OUTLINE" );
         }
-        return available;
+
+        return sendGet;
+    }
+
+    /**
+     * 从client端接收文件
+     * @param fileLength
+     * @return
+     */
+    public File recvFile(String fileName,Integer fileLength){
+        //TODO 接收文件
+        //用字节数组存储接收到的数据，
+        byte[] recvBytes = new byte[4096];
+        Integer recvLength = 0;
+        File file = new File(fileName);
+        try {
+            FileOutputStream fos = new FileOutputStream(file);
+            while(recvLength < fileLength){
+                //记录已经接收的字节数
+                recvLength += is.read(recvBytes);
+                fos.write(recvBytes);
+            }
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+//        String savePath = fileName + fileLength;
+        return file;
     }
 
     /**
@@ -333,19 +425,28 @@ class Handler extends Thread{
     public boolean clientExit(){
         boolean retMsgSuccess = false;
         if(send("resp&" + Constants.SUCCESS_CODE + "&" + "exit&" + "EXIT_OK")){
-            if(DaoHelper.changeUserStatus(this.clientName,0) == 1){
+            if("NOT_INIT".equals(this.clientName)){
+                //并没有登录，可以直接登出
+                retMsgSuccess = true;
+            }
+            else if(DaoHelper.changeUserStatus(this.clientName,0) == 1){
                 int resourceStatusChanged = DaoHelper.changeResourceStatus(this.clientName,0);
                 //返回exitOK成功后才能把状态结束
                 retMsgSuccess = true;
-                clientName = null;
-                this.isRunning = false;
+                //关闭要退出的这个用户的os流
+                try {
+                    Server.username2os.get(clientName).close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                clientName = "NOT_INIT";
             }else{
                 System.out.println("下线用户时出现意外——请检查数据库");
             }
         }else{
             System.out.println("给客户端发送EXITOK失败");
         }
-
+        this.isRunning = false;
         return retMsgSuccess;
     }
     /**
