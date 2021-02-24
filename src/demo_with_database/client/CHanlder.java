@@ -125,8 +125,14 @@ class CHanlder extends Thread{
             if(msgType.contains("resp")){
                 status = arr[1];
                 cmd = arr[2];
-                //不同的资源之间用#分割
-                String[] splitDatas = arr[3].split("#");
+                String[] splitDatas = null;
+                if("list".equals(cmd)){
+                    //不同的资源之间用#分割
+                    splitDatas = arr[3].split("#");
+                }else{
+                    //对于其他命令的回复，用空格分割
+                    splitDatas = arr[3].split("\\s+");
+                }
                 dataLength = splitDatas.length;
                 for (int i = 0; i < dataLength; i++) {
                     datas[i] = splitDatas[i];
@@ -140,7 +146,7 @@ class CHanlder extends Thread{
                 for (int i = 0; i < splitArgs.length; i++) {
                     args[i] = splitArgs[i];
                 }
-                //第四行data是文件名，只有一个元素
+                //第四行data是文件名 + 文件code
                 String[] splitDatas = arr[3].split("\\s+");
                 dataLength = splitDatas.length;
                 for (int i = 0; i < dataLength; i++) {
@@ -179,6 +185,11 @@ class CHanlder extends Thread{
                         }
                     }
                     break;
+                case "get":
+                    //准备接收文件
+                    File fileGot = recvFile(datas[0],Integer.parseInt(datas[1]));
+                    System.out.println(fileGot.getName());
+                    break;
                 default:
                     break;
             }
@@ -194,10 +205,11 @@ class CHanlder extends Thread{
                     resp&
                     status&
                     cmd&
-                    filename fileLength
+                    filename fileLength username
                      */
                     File file = new File(args[0]);
-                    sendReq("resp&" + Constants.SUCCESS_CODE + "&" + cmd + "&" + datas[0] + " " + file.length());
+                    //resp&  200&  get& filename fileLength fileCode
+                    sendReq("resp&" + Constants.SUCCESS_CODE + "&" + cmd + "&" + datas[0] + " " + file.length() + " " + datas[1]);
                     sendFile(args[0]);
                     break;
                 default:
@@ -371,10 +383,42 @@ class CHanlder extends Thread{
         String resourceCode = readGetCmd();
         if(sendReq("req&" + "get&" + resourceCode + "&" + "GET_DATA")){
             sendGet = "SEND_GET_OK";
+            //服务端阻塞，等待服务端有了文件后，就向我返回文件
         }else{
             System.out.println("发送get请求失败");
         }
         return sendGet;
+    }
+
+    /**
+     * 从服务端接收文件
+     * @param fileLength
+     * @return
+     */
+    public File recvFile(String fileName,Integer fileLength){
+        //从其他流接收文件，
+        //用字节数组存储接收到的数据，
+        byte[] recvBytes = new byte[4096];
+        Integer recvLength = 0;
+        //作为接收方暂存的位置
+        String path = "C:\\Users\\Charl\\Desktop\\testFolder\\";
+        File file = new File(path + fileName);
+        try {
+            FileOutputStream fos = new FileOutputStream(file);
+            while(recvLength < fileLength){
+                //记录已经接收的字节数
+                int len = is.read(recvBytes);
+                recvLength += len;
+                fos.write(recvBytes,0,len);
+            }
+            fos.flush();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+//        String savePath = fileName + fileLength;
+        return file;
     }
 
     /**

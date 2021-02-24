@@ -22,6 +22,15 @@ public class Server {
      */
 //    public static HashMap<String,Socket> username2Socket = new HashMap<>();
     public static HashMap<String,OutputStream> username2os = new HashMap<>();
+    public static HashMap<String,InputStream> username2is = new HashMap<>();
+    public static HashMap<String,File> fileMap = new HashMap<>();
+    /*
+    设一个锁和标志位，当收到get指令时，就等待
+    当fileMap更新时，就通知所有等待线程，查看是否有自己想要的文件
+     */
+
+    public static boolean waitFlag = true;
+    public static Object lock = new Object();
 
     public static void main(String[] args) throws IOException {
         System.out.println("---------服务端运行--------");
@@ -122,7 +131,7 @@ class Handler extends Thread{
         String cmd = null;
         //参数-最多包含，resourceName,deviceName,path,code,note 5个参数
         String[] args = new String[5];
-        String[] datas= new String[2];
+        String[] datas= new String[3];
         String status = null;
         //用于按照正则表达式分割信息
         String[] arr;
@@ -151,7 +160,7 @@ class Handler extends Thread{
                  * regist       -- req & cmd & username + pwd & lanip + publicip
                  * login        -- req & cmd & username + pwd & nothing
                  * exit         -- req & cmd & nothing
-                 * report       -- req & cmd & nothing 资源通过对象直接传入
+                 * report       -- req & cmd & --待完善
                  * list         -- req & cmd & all/resourceName
                  * get          -- req & cmd & code(自己选择获取哪一个)
                  */
@@ -194,9 +203,33 @@ class Handler extends Thread{
                         }
                         break;
                     case "get":
-                        String sss = getResourceFromClient(args[0]);
-                        if("SEND_GET_OK".equals(sss)){
+                        String fileName = getResourceFromClient(args[0]);
+                        if(fileName.length() > 0){
                             System.out.println("服务端已向资源拥有方发送get请求");
+                            synchronized (Server.lock){
+                                //默认开始等待，当fileMap更新后停止等待，如果fileMap中没有我要的文件，我也继续等待
+                                while(Server.waitFlag || !Server.fileMap.containsKey(args[0])){
+                                    try {
+                                        Server.lock.wait();
+                                    } catch (InterruptedException e) {
+                                        e.printStackTrace();
+                                    }
+                                }
+                                //fileMap更新后，开始工作：向客户端发送文件
+                                File file = Server.fileMap.get(args[0]);
+                                if(file == null || file.length() == 0){
+                                    System.out.println("服务端发送文件出现了未知错误");
+                                }
+                                /*
+                                准备发送文件了，向请求客户发送resp报文
+                                resp&
+                                500
+                                get
+                                fileName fileLength
+                                 */
+                                send("resp&" + Constants.SUCCESS_CODE + "&" + "get&" + fileName + " " + file.length());
+                                sendFile(file);
+                            }
                         }
                         break;
                     /*
@@ -214,7 +247,8 @@ class Handler extends Thread{
             }else if("resp".equals(msgType)){
                 //是客户端的响应
                 status = arr[1];
-                //客户端响应的文件名+文件长度
+                cmd = arr[2];
+                //客户端响应的文件名+文件长度+文件code
                 String[] splitDatas = arr[3].split("\\s+");
                 for (int i = 0; i < splitDatas.length; i++) {
                     datas[i] = splitDatas[i];
@@ -223,8 +257,18 @@ class Handler extends Thread{
                     //准备接收文件
                     case "get":
                         Integer fileLength = Integer.parseInt(datas[1]);
+                        //是谁给你resp的？不就是当前连接吗？
                         File file = recvFile(datas[0],fileLength);
-                        System.out.println(file.getName());
+                        //收到之后放在服务端的暂存区，由另一个线程 获取并发送
+                        synchronized (Server.lock){
+                            Server.fileMap.put(datas[2],file);
+                            System.out.println("服务端收到：" + file.getName() + file.length());
+                            //停止等待
+                            Server.waitFlag = false;
+                            //通知等待文件的handler，看看fileMap中是否有自己想要的file
+                            Server.lock.notifyAll();
+                        }
+
                         break;
                     //心跳检测的回复报文
                     case "isAlive":
@@ -278,7 +322,7 @@ class Handler extends Thread{
             bw.flush();*/
             os.write(sendMsg.getBytes(StandardCharsets.UTF_8));
             System.out.println("运行了一次send()函数，发送的消息是：" + sendMsg);
-            System.out.println("发送的string长度是" + sendMsg.length());
+//            System.out.println("发送的string长度是" + sendMsg.length());
             sendSuccess = true;
         } catch (IOException e) {
             e.printStackTrace();
@@ -324,6 +368,7 @@ class Handler extends Thread{
 //            Server.username2Socket.put(username,clientSocket);
             try {
                 Server.username2os.put(username,clientSocket.getOutputStream());
+                Server.username2is.put(username,clientSocket.getInputStream());
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -369,42 +414,45 @@ class Handler extends Thread{
          * 1. 从数据库中查询文件绝对路径和对应状态
          * 2. if(status != 1) 不可用，重新输入命令
          */
-        String sendGet = null;
         Resource resourceFound = DaoHelper.getResourceByCode(code);
         if(resourceFound.getStatus() == 1){
             //得到拥有资源的客户端的当前连接
 //            Socket resSocket = Server.username2Socket.get(resourceFound.getDeviceName());
             OutputStream os = Server.username2os.get(resourceFound.getDeviceName());
             //服务端向拥有资源的客户端B发送请求报文
-            String msg = "req&" + "get&" + resourceFound.getPath() + "&" + resourceFound.getResourceName();
+            String msg = "req&" + "get&" + resourceFound.getPath() + "&" + resourceFound.getResourceName() + " " + resourceFound.getCode();
             ftpRequest(os,msg);
-            sendGet = "SEND_GET_OK";
+
         }else{
             //给客户端返回，请求错误
             send("resp&" + Constants.ERROR_CODE + "&" + "get&" + "RESOURSE_OUTLINE" );
         }
 
-        return sendGet;
+        return resourceFound.getResourceName();
     }
 
     /**
-     * 从client端接收文件
+     * 从当前client端接收文件
+     * 注意，线程B的handler接收到文件，
      * @param fileLength
      * @return
      */
     public File recvFile(String fileName,Integer fileLength){
-        //TODO 接收文件
+        //从其他流接收文件，
         //用字节数组存储接收到的数据，
         byte[] recvBytes = new byte[4096];
         Integer recvLength = 0;
+        System.out.println("recvFile的fileLength参数是" + fileLength);
         File file = new File(fileName);
         try {
             FileOutputStream fos = new FileOutputStream(file);
             while(recvLength < fileLength){
                 //记录已经接收的字节数
-                recvLength += is.read(recvBytes);
-                fos.write(recvBytes);
+                int len = is.read(recvBytes);
+                recvLength += len;
+                fos.write(recvBytes,0,len);
             }
+            fos.flush();
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         } catch (IOException e) {
@@ -412,6 +460,29 @@ class Handler extends Thread{
         }
 //        String savePath = fileName + fileLength;
         return file;
+    }
+
+    /**
+     * 向客户端发送文件
+     * @param file 要发送的文件
+     * @return
+     */
+    public String sendFile(File file){
+        String sendOK = null;
+        //发送文件
+        try {
+            FileInputStream fis = new FileInputStream(file);
+            byte[] fileData = new byte[4096];
+            while(fis.read(fileData) > 0){
+                os.write(fileData);
+                os.flush();
+            }
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return sendOK;
     }
 
     /**
@@ -436,9 +507,12 @@ class Handler extends Thread{
                 //关闭要退出的这个用户的os流
                 try {
                     Server.username2os.get(clientName).close();
+                    Server.username2is.get(clientName).close();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
+                Server.username2os.remove(clientName);
+                Server.username2is.remove(clientName);
                 clientName = "NOT_INIT";
             }else{
                 System.out.println("下线用户时出现意外——请检查数据库");
