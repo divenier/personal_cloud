@@ -434,10 +434,11 @@ class CHanlder extends Thread{
         try {
             FileInputStream fis = new FileInputStream(file);
             byte[] fileData = new byte[4096];
-            while(fis.read(fileData) > 0){
-                os.write(fileData);
-                os.flush();
+            int len = 0;
+            while((len = fis.read(fileData)) > 0){
+                os.write(fileData,0,len);
             }
+            os.flush();
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         } catch (IOException e) {

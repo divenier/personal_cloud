@@ -9,6 +9,8 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * @author divenier
@@ -18,7 +20,7 @@ import java.util.HashMap;
 public class Server {
 
     /**
-     * 用一个静态Map表，存储userName和socket的映射，向对应socket发送消息
+     * 用几个静态Map表，存储userName和socket的IO流的映射，向对应socket发送消息
      */
 //    public static HashMap<String,Socket> username2Socket = new HashMap<>();
     public static HashMap<String,OutputStream> username2os = new HashMap<>();
@@ -28,18 +30,12 @@ public class Server {
     设一个锁和标志位，当收到get指令时，就等待
     当fileMap更新时，就通知所有等待线程，查看是否有自己想要的文件
      */
-
     public static boolean waitFlag = true;
     public static Object lock = new Object();
 
     public static void main(String[] args) throws IOException {
         System.out.println("---------服务端运行--------");
-//        init();
-/*        try {
-            new Server().start();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }*/
+
         new Server().start();
     }
 
@@ -51,50 +47,26 @@ public class Server {
         ServerSocket server = new ServerSocket(Constants.SERVER_PORT);
         //用来记录连接的个数
         int num = 1;
-//        ExecutorService executorService = Executors.newCachedThreadPool();
+        ExecutorService executorService = Executors.newCachedThreadPool();
         while (true) {
             Socket clientSocket= server.accept();
             System.out.println(num + "个客户端建立了连接");
-            //局域网IP
-            System.out.println("局域网IP " + clientSocket.getLocalAddress());
-//			System.out.println(client.getLocalSocketAddress());//局域网IP加端口
-//			System.out.println(client.getRemoteSocketAddress());//公网IP+端口
-            //公网IP
-            System.out.println("公网IP " + clientSocket.getInetAddress());
             num++;
             Handler handler = new Handler(clientSocket,true);
-            handler.start();
-//            Detection detection = new Detection(clientSocket,true);
-//            detection.start();
+            executorService.execute(handler);
         }
-    }
-
-
-    /**
-     * 初始化
-     * 好像 也不需要连接数据库，需要对数据库操作可以直接调用JdbcUtil
-     */
-    public static void init(){
-
     }
 }
 
-class Handler extends Thread{
+class Handler implements Runnable{
     /**
      * clientSocket       --要处理的socket连接
-     * dataInputStream    --用来接收socket的输入流，方便解析
-     * dataOutputStream   --输出流
      * reqMesg            --接收到的信息，准备直接用换行符解析
-     * isRunning          --本线程是否还在运行
+     * isRunning          --本线程是否还在运行，用来停止Handler线程
      */
     private Socket clientSocket;
     public InputStream is;
     public OutputStream os;
-//    private BufferedReader br;
-//    private BufferedWriter bw;
-//    private PrintStream ps;
-//    private ObjectInputStream ois;
-//    private ObjectOutputStream oos;
     public Boolean isRunning;
 
     //存储客户端socket的登录用户名
@@ -107,11 +79,6 @@ class Handler extends Thread{
         try {
             this.is = s.getInputStream();
             this.os = s.getOutputStream();
-//            this.br = new BufferedReader(new InputStreamReader(s.getInputStream(),"UTF-8"));
-//            this.bw = new BufferedWriter(new PrintWriter(s.getOutputStream()));
-//            this.ps = new PrintStream(new BufferedOutputStream(s.getOutputStream()));
-//            this.ois = new ObjectInputStream(is);
-//            this.oos = new ObjectOutputStream(os);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -136,7 +103,6 @@ class Handler extends Thread{
         //用于按照正则表达式分割信息
         String[] arr;
         try {
-//            reqMesg = br.readLine();
             byte[] recvBytes = new byte[4096];
             int len = is.read(recvBytes);
             reqMesg = new String(recvBytes,0,len);
@@ -449,6 +415,7 @@ class Handler extends Thread{
             while(recvLength < fileLength){
                 //记录已经接收的字节数
                 int len = is.read(recvBytes);
+                System.out.println("本次写入之前已接受长度：" + recvLength + "本次接收到长度：" + len);
                 recvLength += len;
                 fos.write(recvBytes,0,len);
             }
@@ -458,6 +425,7 @@ class Handler extends Thread{
         } catch (IOException e) {
             e.printStackTrace();
         }
+        System.out.println("接收到的文件长度是：" + file.length());
 //        String savePath = fileName + fileLength;
         return file;
     }
@@ -542,33 +510,5 @@ class Handler extends Thread{
             handleRequest();
         }
         closeSocket();
-    }
-}
-
-//问题的关键就是，让客户端可以随时接收到服务端的消息，而不是想接收再接收
-class Detection extends Thread{
-    /**
-     * br       --用于接收信息
-     * ois      --用于接收对象
-     */
-    private BufferedReader br;
-    private ObjectInputStream ois;
-    public boolean needDetection;
-
-    public Detection(Socket s,boolean b){
-        try {
-            this.br = new BufferedReader(new InputStreamReader(s.getInputStream(),"UTF-8"));
-            this.ois = new ObjectInputStream(s.getInputStream());
-            this.needDetection = b;
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    @Override
-    public void run() {
-        while(needDetection){
-            needDetection = false;
-        }
     }
 }
