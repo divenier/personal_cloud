@@ -9,8 +9,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 /**
  * @author divenier
@@ -47,13 +46,29 @@ public class Server {
         ServerSocket server = new ServerSocket(Constants.SERVER_PORT);
         //用来记录连接的个数
         int num = 1;
-        ExecutorService executorService = Executors.newCachedThreadPool();
+//        ExecutorService executorService = Executors.newCachedThreadPool();
+        /*
+        自定义线程池
+        核心就一个收，一个发，两个线程
+        保活：60s
+        默认拒绝策略……
+         */
+        ExecutorService threadPool = new ThreadPoolExecutor(
+                2,
+                5,
+                60,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(3),
+                Executors.defaultThreadFactory(),
+                new ThreadPoolExecutor.AbortPolicy()
+        );
         while (true) {
             Socket clientSocket= server.accept();
             System.out.println(num + "个客户端建立了连接");
             num++;
             Handler handler = new Handler(clientSocket,true);
-            executorService.execute(handler);
+//            executorService.execute(handler);
+            threadPool.execute(handler);
         }
     }
 }
