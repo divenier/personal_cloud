@@ -59,8 +59,6 @@ public class Client {
                         break;
                     }
                     String retForGet = clientHanlder.getResource();
-//                    String cmdForGet = readGetCmd();
-//                    System.out.println(retForGet);
                     break;
                 case "exit":
                     boolean exitSuccess = clientHanlder.exit();

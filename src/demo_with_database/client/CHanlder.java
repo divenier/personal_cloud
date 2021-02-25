@@ -26,31 +26,16 @@ class CHanlder extends Thread{
     public Socket client;
     public InputStream is;
     public OutputStream os;
-    //    public FileInputStream fis;
-//    public FileOutputStream fos;
-//    public PrintStream ps;
-//    public BufferedWriter bw;
-//    public BufferedReader br;
-//    public ObjectOutputStream oos;
     public Scanner scanner;
     public String clientUserName;
-    //存放自己拥有的资源，code+path
-//    public HashMap<String,String> code2path;
 
     public CHanlder(Socket clientSocket,boolean b) throws IOException {
         this.client = clientSocket;
         this.is = clientSocket.getInputStream();
         this.os = clientSocket.getOutputStream();
-//        this.fis = new FileInputStream(clientSocket.getInputStream());
-//        this.br = new BufferedReader(new InputStreamReader(is,"UTF-8"));
-//        this.bw = new BufferedWriter(new PrintWriter(os));
-//        this.ps = new PrintStream(new BufferedOutputStream(os));
-//        this.oos = new ObjectOutputStream(clientSocket.getOutputStream());
         //登录之后修改为用户名
         this.clientUserName = "NOT_INIT";
         this.isRunning = b;
-//        this.code2path = new HashMap<String,String>();
-//        this.waitForExit = false;
     }
 
     public void closeSocket(){
@@ -223,11 +208,11 @@ class CHanlder extends Thread{
     /**
      * 注册
      * 上报信息包含：
-     * username 用户名
-     * password 密码
-     * lanip
-     * publicip
-     * @return 注册的结果
+     * username         --用户名
+     * password         --密码
+     * lanip            --用工具类获取
+     * publicip         --同上
+     * @return          注册的结果
      */
     public String regist(){
         String regStatus = null;
@@ -451,7 +436,6 @@ class CHanlder extends Thread{
     /**
      * 给服务端发送断开连接指令
      * 发送就行了，接收处理交给recvMsg
-     * TODO 修改协议
      */
     public boolean exit(){
         //服务端收到你要断开的指令

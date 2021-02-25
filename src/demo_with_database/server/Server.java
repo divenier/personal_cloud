@@ -365,16 +365,12 @@ class Handler implements Runnable{
         return sb.toString();
     }
 
-    /**
-     * 判断用户请求的资源是否可用
-     * @return
-     */
-//    public boolean getResourceStatus(String code){
-//
-//        return resourceFound.getStatus() == 1 ? true :false;
-//    }
 
-    //问题：如何在接收到客户A要文件的请求时，把req resource请求发给客户B？
+    /**
+     * 向资源持有方发送请求报文，请求资源方给服务器传文件
+     * @param code 文件的唯一编码
+     * @return 查询到的文件对应的名称-server返回给客户端，方便实现客户端的文件存储
+     */
     public String getResourceFromClient(String code){
         /**
          * 1. 从数据库中查询文件绝对路径和对应状态
@@ -382,13 +378,17 @@ class Handler implements Runnable{
          */
         Resource resourceFound = DaoHelper.getResourceByCode(code);
         if(resourceFound.getStatus() == 1){
-            //得到拥有资源的客户端的当前连接
-//            Socket resSocket = Server.username2Socket.get(resourceFound.getDeviceName());
+            /*
+            得到socket并使用socket的IO流，可能导致关闭IO流时，JVM自动关闭对应socket
+            因此用新的hashMap存储对应的IO流。
+
+            Socket resSocket = Server.username2Socket.get(resourceFound.getDeviceName());
+             */
+            //得到拥有资源的客户端的连接
             OutputStream os = Server.username2os.get(resourceFound.getDeviceName());
             //服务端向拥有资源的客户端B发送请求报文
             String msg = "req&" + "get&" + resourceFound.getPath() + "&" + resourceFound.getResourceName() + " " + resourceFound.getCode();
             ftpRequest(os,msg);
-
         }else{
             //给客户端返回，请求错误
             send("resp&" + Constants.ERROR_CODE + "&" + "get&" + "RESOURSE_OUTLINE" );
@@ -398,10 +398,9 @@ class Handler implements Runnable{
     }
 
     /**
-     * 从当前client端接收文件
-     * 注意，线程B的handler接收到文件，
-     * @param fileLength
-     * @return
+     * 从当前连接的client端接收文件
+     * @param fileLength 文件长度-方便实现文件接收
+     * @return 收到的文件
      */
     public File recvFile(String fileName,Integer fileLength){
         //从其他流接收文件，
@@ -459,7 +458,7 @@ class Handler implements Runnable{
      * 2. 把用户下线
      * 3. 把所有该用户持有的资源下线
      * 4. 终止处理线程
-     * @return
+     * @return 退出是否成功
      */
     public boolean clientExit(){
         boolean retMsgSuccess = false;
