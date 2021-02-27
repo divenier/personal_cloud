@@ -101,10 +101,9 @@ class Handler implements Runnable{
 
     /**
      * 随时接收客户端的消息
-     * 解析客户的请求，并对之做出响应
-     * 不只是响应请求，也解析回复
+     * 解析客户的消息，并对之做出响应
      */
-    private void handleRequest(){
+    private void handleReqResp(){
         //收到的整个信息
         String reqMesg = null;
         //是请求还是响应
@@ -225,7 +224,8 @@ class Handler implements Runnable{
                         System.out.println("客户端命令错误，请让它重新输入");
                         break;
                 }
-            }else if("resp".equals(msgType)){
+            }
+            else if("resp".equals(msgType)){
                 //是客户端的响应
                 status = arr[1];
                 cmd = arr[2];
@@ -238,7 +238,7 @@ class Handler implements Runnable{
                     //准备接收文件
                     case "get":
                         Integer fileLength = Integer.parseInt(datas[1]);
-                        //是谁给你resp的？不就是当前连接吗？
+                        //从当前连接接收文件（运行起来后，handler可不止一个）
                         File file = recvFile(datas[0],fileLength);
                         //收到之后放在服务端的暂存区，由另一个线程 获取并发送
                         synchronized (Server.lock){
@@ -261,7 +261,6 @@ class Handler implements Runnable{
         } catch (IOException e) {
             e.printStackTrace();
         }
-
     }
 
     /**
@@ -275,7 +274,6 @@ class Handler implements Runnable{
      */
     public String ftpRequest(OutputStream os,String msg){
         String reqResult = null;
-            //用完要不要关闭？？
         try {
             os.write(msg.getBytes(StandardCharsets.UTF_8));
             reqResult = "SERVER_REQ_SEND_OK";
@@ -288,7 +286,7 @@ class Handler implements Runnable{
     /**
      * 给客户端发送消息
      * @param sendMsg
-     * @return
+     * @return 是否执行了发送代码
      */
     public boolean send(String sendMsg){
         boolean sendSuccess = false;
@@ -297,13 +295,8 @@ class Handler implements Runnable{
             return false;
         }
         try {
-/*            bw.write(sendMsg);
-            //相当于手动添加了换行符，让readline可以读取
-            bw.newLine();
-            bw.flush();*/
             os.write(sendMsg.getBytes(StandardCharsets.UTF_8));
             System.out.println("运行了一次send()函数，发送的消息是：" + sendMsg);
-//            System.out.println("发送的string长度是" + sendMsg.length());
             sendSuccess = true;
         } catch (IOException e) {
             e.printStackTrace();
@@ -345,8 +338,7 @@ class Handler implements Runnable{
             DaoHelper.changeResourceStatus(user.getUserName(),1);
             //handler保存该socket连接的用户名
             this.clientName = username;
-            //把用户名和socket放到map中
-//            Server.username2Socket.put(username,clientSocket);
+            //保存连接对应的IO流，用于服务端发起  ftpRequest()
             try {
                 Server.username2os.put(username,clientSocket.getOutputStream());
                 Server.username2is.put(username,clientSocket.getInputStream());
@@ -361,7 +353,6 @@ class Handler implements Runnable{
      * 查询结果
      * @param arg -all查询所有东西 -文件名 查询该文件
      * @return 查询结果，不同条用&分隔开，可以用于直接返回给客户端
-     *
      */
     public String list(String arg){
         Resource[] resourceList = DaoHelper.getResourceList(arg);
@@ -375,11 +366,10 @@ class Handler implements Runnable{
             //分割不同的资源
             sb.append("#");
         }
-        //删掉最后一个&
+        //删掉最后一个#
         sb.deleteCharAt(sb.length()-1);
         return sb.toString();
     }
-
 
     /**
      * 向资源持有方发送请求报文，请求资源方给服务器传文件
@@ -521,7 +511,7 @@ class Handler implements Runnable{
     @Override
     public void run() {
         while (isRunning){
-            handleRequest();
+            handleReqResp();
         }
         closeSocket();
     }
